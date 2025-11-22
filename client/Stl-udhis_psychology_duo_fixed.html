@@ -33043,10 +33043,10 @@ console.log('🔤 Quantum AI Translator Module Loaded - Ready for real AI transl
                 try {
                     await fetch(url, { mode: 'no-cors' }); // 'no-cors' untuk ping sederhana
                     console.log(`%c✅ PONG! Backend 'py global' Anda AKTIF.`, 'color: #4ade80; font-weight: bold;');
-                    if(window.quantumEngine) window.quantumEngine.updateQuantumIsland('📡 Backend Aktif', 'success');
+
                 } catch (e) {
                     console.error(`%c❌ GAGAL! Backend 'py global' Anda MATI atau tidak terjangkau.`, 'color: #f87171; font-weight: bold;');
-                    if(window.quantumEngine) window.quantumEngine.updateQuantumIsland('📡 Backend Mati', 'error');
+
                 }
             }
         },
@@ -44949,5 +44949,194 @@ document.head.appendChild(notificationStyle);
   }
 })();
 </script>
+
+<!-- BEGIN: NajibDev Quantum WS Integration (auto-inject) -->
+<script id="najibdev_ws_integration">
+(function(){
+  const WS_URL = "ws://localhost:8765";
+  let ws = null;
+  let reconnectDelay = 1500;
+  let pendingLoadingIds = new Map();
+
+  function connect(){
+    try{
+      ws = new WebSocket(WS_URL);
+      window.quantumWebSocket = ws;
+      ws.addEventListener('open', ()=> {
+        console.info("[najibdev] Quantum WS connected to", WS_URL);
+        if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
+
+        }
+        // ping to backend
+        try{ ws.send(JSON.stringify({type:'ping'})); }catch(e){}
+      });
+      ws.addEventListener('message', ev=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          document.dispatchEvent(new CustomEvent('QuantumEngineMessage', { detail: msg }));
+          // handle ai responses
+          if(msg && msg.type === 'ai_chat_response' && msg.message){
+            deliverAIResponse(msg);
+          }
+        }catch(e){
+          console.warn('[najibdev] WS parse error', e);
+        }
+      });
+      ws.addEventListener('close', ()=> {
+        console.warn('[najibdev] Quantum WS closed — reconnecting...');
+        if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
+
+        }
+        setTimeout(connect, reconnectDelay);
+      });
+      ws.addEventListener('error', (e)=> {
+        console.warn('[najibdev] WS error', e);
+        try{ ws.close(); }catch(_){}
+      });
+    }catch(e){
+      console.error('[najibdev] WS connect failed', e);
+      setTimeout(connect, reconnectDelay);
+    }
+  }
+
+  // Append AI bubble to existing messages container
+  function appendAIBubble(text, options){
+    try{
+      const messages = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages') || document.querySelector('#quantumChatMessages');
+      if(!messages) {
+        console.debug('[najibdev] messages container not found, falling back to console.');
+        console.log('AI:', text);
+        return null;
+      }
+      const el = document.createElement('div');
+      el.className = 'quantum-message ai';
+      el.innerHTML = (options && options.html) ? options.html : ( '<p>🤖 <strong>stl-AI Response:</strong></p><p>' + String(text) + '</p>' );
+      messages.appendChild(el);
+      messages.scrollTop = messages.scrollHeight;
+      return el;
+    }catch(e){ console.warn('[najibdev] appendAIBubble fail', e); return null; }
+  }
+
+  // Remove loading bubble by id
+  function removeLoading(id){
+    try{
+      const elem = document.getElementById(id);
+      if(elem) elem.remove();
+      pendingLoadingIds.delete(id);
+    }catch(e){}
+  }
+
+  // When backend sends ai response
+  function deliverAIResponse(msg){
+    try{
+      // msg may contain correlation id to match request
+      const corr = msg.correlation_id || msg.request_id || null;
+      if(corr && pendingLoadingIds.has(corr)){
+        const loadingId = pendingLoadingIds.get(corr);
+        removeLoading(loadingId);
+        pendingLoadingIds.delete(corr);
+      }
+      appendAIBubble(msg.message || '(empty)');
+    }catch(e){ console.warn('[najibdev] deliverAIResponse fail', e); }
+  }
+
+  // Wrap existing quantumEngine.sendMessage to forward to backend if WS ready
+  function wrapSendMessage(){
+    try{
+      if(!window.quantumEngine) {
+        console.debug('[najibdev] quantumEngine not defined yet; retry wrap in 300ms');
+        setTimeout(wrapSendMessage, 300);
+        return;
+      }
+      if(window.quantumEngine.__najib_wrapped_send) return; // already wrapped
+      const origSend = window.quantumEngine.sendMessage && window.quantumEngine.sendMessage.bind(window.quantumEngine);
+
+      // new sendMessage
+      window.quantumEngine.sendMessage = async function(){
+        try{
+          // try to find input
+          const input = document.getElementById('quantumChatInput') || document.querySelector('.quantum-chat-input-row textarea') || document.querySelector('.quantum-chat-input-container textarea') || document.querySelector('textarea.quantum-input');
+          const text = input ? (input.value || input.innerText || '').trim() : '';
+          if(!text) return;
+          // display user bubble (let existing UI do it if origSend exists)
+          if(origSend){
+            try{ origSend(); }catch(e){ console.debug('[najibdev] origSend failed', e); }
+          } else {
+            // fallback to append user bubble
+            const messages = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+            if(messages){
+              const userMsg = document.createElement('div');
+              userMsg.className = 'quantum-message user';
+              userMsg.textContent = text;
+              messages.appendChild(userMsg);
+              messages.scrollTop = messages.scrollHeight;
+            }
+            if(input && input.value!==undefined) input.value = '';
+            else if(input) input.innerText = '';
+          }
+
+          // show loading bubble and generate correlation id
+          const corrId = 'req_'+Math.random().toString(36).substr(2,9);
+          const loadingId = 'najib_loading_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
+          pendingLoadingIds.set(corrId, loadingId);
+          const messages = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+          if(messages){
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'quantum-message ai';
+            loadingDiv.id = loadingId;
+            loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Sedang berpikir...';
+            messages.appendChild(loadingDiv);
+            messages.scrollTop = messages.scrollHeight;
+          }
+
+          // Send to backend via WS if available
+          const payload = { type: 'ai_chat_message', message: text, request_id: corrId, timestamp: new Date().toISOString() };
+          if(window.quantumWebSocket && window.quantumWebSocket.readyState === WebSocket.OPEN){
+            try{ window.quantumWebSocket.send(JSON.stringify(payload)); }
+            catch(e){ console.warn('[najibdev] send via WS failed', e); appendAIBubble('⚠️ Gagal mengirim ke backend (WS).'); removeLoading(loadingId); }
+          } else {
+            // fallback: try existing bridge if present
+            if(window.QuantumEngineBridge && typeof window.QuantumEngineBridge.send === 'function'){
+              try{ window.QuantumEngineBridge.send(payload); }
+              catch(e){ console.warn('[najibdev] bridge send failed', e); appendAIBubble('⚠️ Gagal mengirim ke backend (Bridge).'); removeLoading(loadingId); }
+            } else {
+              console.warn('[najibdev] No WS or bridge available to send AI message.');
+              appendAIBubble('⚠️ Backend belum terkoneksi.');
+              removeLoading(loadingId);
+            }
+          }
+        }catch(e){ console.error('[najibdev] wrapped sendMessage error', e); if(typeof origSend === 'function') try{ origSend(); }catch(_){} }
+      };
+
+      window.quantumEngine.__najib_wrapped_send = true;
+      console.info('[najibdev] quantumEngine.sendMessage wrapped to forward to backend.');
+    }catch(e){ console.error('[najibdev] wrapSendMessage failed', e); setTimeout(wrapSendMessage, 500); }
+  }
+
+  // Also wire Start button to focus input (already patched in HTML, but ensure connection)
+  function wireStartHook(){
+    try{
+      const start = document.getElementById('openAIChat') || document.querySelector('.quantum-home-btn.ai-chat') || document.querySelector('[data-action="open-ai-chat"]');
+      if(start){
+        start.addEventListener('click', ()=>{
+          setTimeout(()=> {
+            const ta = document.getElementById('quantumChatInput') || document.querySelector('.quantum-chat-input-row textarea') || document.querySelector('textarea.quantum-input');
+            if(ta) ta.focus();
+          }, 120);
+        }, { passive:true });
+      }
+    }catch(e){}
+  }
+
+  // Init
+  setTimeout(()=>{ connect(); wrapSendMessage(); wireStartHook(); }, 120);
+
+  // expose small API
+  window.__najib_ws_integration = {
+    connect, appendAIBubble, removeLoading
+  };
+})();
+</script>
+<!-- END: NajibDev Quantum WS Integration -->
 </body>
 </html>
