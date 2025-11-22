@@ -1,0 +1,9 @@
+websockets
+jinja2
+requests
+markdown
+pdfkit
+python-docx
+
+matplotlib
+pandas

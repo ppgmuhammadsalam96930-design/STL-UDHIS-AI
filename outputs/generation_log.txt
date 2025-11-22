@@ -1,0 +1,4 @@
+sample_template_used: k13/mapel/akuntansi.html
+generation_result: {'ok': True, 'source': 'local', 'markdown': '<html><body><h1>Template RPP</h1><div>{content}</div></body></html>', 'markdown_path': '/mnt/data/quantum-ai-bundle-final6/outputs/sample_rpp_20251122_092905.md'}
+markdown_path: /mnt/data/quantum-ai-bundle-final6/outputs/sample_rpp_20251122_092905.md
+html_path: /mnt/data/quantum-ai-bundle-final6/outputs/sample_rpp_20251122_092905.html
