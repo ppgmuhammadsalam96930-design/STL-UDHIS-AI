@@ -33043,10 +33043,10 @@ console.log('🔤 Quantum AI Translator Module Loaded - Ready for real AI transl
                 try {
                     await fetch(url, { mode: 'no-cors' }); // 'no-cors' untuk ping sederhana
                     console.log(`%c✅ PONG! Backend 'py global' Anda AKTIF.`, 'color: #4ade80; font-weight: bold;');
-
+                    if(window.quantumEngine) window.quantumEngine.updateQuantumIsland('📡 Backend Aktif', 'success');
                 } catch (e) {
                     console.error(`%c❌ GAGAL! Backend 'py global' Anda MATI atau tidak terjangkau.`, 'color: #f87171; font-weight: bold;');
-
+                    if(window.quantumEngine) window.quantumEngine.updateQuantumIsland('📡 Backend Mati', 'error');
                 }
             }
         },
@@ -44949,194 +44949,690 @@ document.head.appendChild(notificationStyle);
   }
 })();
 </script>
+<script>
+/**
+ * bridgeToAI v1.0
+ * - Supports OpenAI (chat completions) + Gemini (configurable endpoint) + Custom provider
+ * - Works direct-from-browser (CORS permitting) or via proxy (recommended)
+ * - Exposes: window.bridgeToAI(text, opts) -> Promise<{ok, text, raw}>
+ *            window.bridgeSetConfig(cfg)
+ *            window.bridgeGetConfig()
+ *
+ * Usage:
+ *  bridgeSetConfig({ provider:'openai', apiKey:'xxx', model:'gpt-4o-mini', useProxy:false })
+ *  await bridgeToAI("Hello")
+ *
+ * Security note: Storing secrets client-side is insecure. Use proxy server when possible.
+ */
+(function(global){
+  const defaultCfg = {
+    provider: 'openai',   // 'openai' | 'gemini' | 'custom'
+    apiKey: null,
+    model: 'gpt-4o-mini', // default model name for OpenAI; override per provider
+    timeoutMs: 30000,
+    useProxy: false,
+    proxyUrl: '',         // e.g. 'https://your-proxy.example.com/api/v1/ai' -> expects { provider, apiKey, body }
+    geminiEndpoint: '',   // if provider === 'gemini', set this to the provider's endpoint
+    customEndpoint: '',   // if provider === 'custom', set full endpoint here
+    headersExtra: {}      // extra headers to attach
+  };
 
-<!-- BEGIN: NajibDev Quantum WS Integration (auto-inject) -->
-<script id="najibdev_ws_integration">
-(function(){
-  const WS_URL = "ws://localhost:8765";
-  let ws = null;
-  let reconnectDelay = 1500;
-  let pendingLoadingIds = new Map();
+  let cfg = Object.assign({}, defaultCfg);
 
-  function connect(){
+  function bridgeSetConfig(newCfg = {}) {
+    cfg = Object.assign({}, cfg, newCfg);
+    // small validation
+    if(cfg.useProxy && (!cfg.proxyUrl || typeof cfg.proxyUrl !== 'string')){
+      console.warn('[bridgeToAI] useProxy true but proxyUrl not set.');
+    }
+    return cfg;
+  }
+
+  function bridgeGetConfig(){ return Object.assign({}, cfg); }
+
+  // small fetch with timeout helper
+  async function fetchTimeout(url, options={}, ms){
+    const controller = new AbortController();
+    const id = setTimeout(()=> controller.abort(), ms || cfg.timeoutMs);
+    options.signal = controller.signal;
     try{
-      ws = new WebSocket(WS_URL);
-      window.quantumWebSocket = ws;
-      ws.addEventListener('open', ()=> {
-        console.info("[najibdev] Quantum WS connected to", WS_URL);
-        if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
-
-        }
-        // ping to backend
-        try{ ws.send(JSON.stringify({type:'ping'})); }catch(e){}
-      });
-      ws.addEventListener('message', ev=>{
-        try{
-          const msg = JSON.parse(ev.data);
-          document.dispatchEvent(new CustomEvent('QuantumEngineMessage', { detail: msg }));
-          // handle ai responses
-          if(msg && msg.type === 'ai_chat_response' && msg.message){
-            deliverAIResponse(msg);
-          }
-        }catch(e){
-          console.warn('[najibdev] WS parse error', e);
-        }
-      });
-      ws.addEventListener('close', ()=> {
-        console.warn('[najibdev] Quantum WS closed — reconnecting...');
-        if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
-
-        }
-        setTimeout(connect, reconnectDelay);
-      });
-      ws.addEventListener('error', (e)=> {
-        console.warn('[najibdev] WS error', e);
-        try{ ws.close(); }catch(_){}
-      });
+      const res = await fetch(url, options);
+      clearTimeout(id);
+      return res;
     }catch(e){
-      console.error('[najibdev] WS connect failed', e);
-      setTimeout(connect, reconnectDelay);
+      clearTimeout(id);
+      throw e;
     }
   }
 
-  // Append AI bubble to existing messages container
-  function appendAIBubble(text, options){
+  // Try to use existing ApiProxy module if present in page (from your file)
+  const hasPageProxy = (function(){
     try{
-      const messages = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages') || document.querySelector('#quantumChatMessages');
-      if(!messages) {
-        console.debug('[najibdev] messages container not found, falling back to console.');
-        console.log('AI:', text);
-        return null;
-      }
-      const el = document.createElement('div');
-      el.className = 'quantum-message ai';
-      el.innerHTML = (options && options.html) ? options.html : ( '<p>🤖 <strong>stl-AI Response:</strong></p><p>' + String(text) + '</p>' );
-      messages.appendChild(el);
-      messages.scrollTop = messages.scrollHeight;
-      return el;
-    }catch(e){ console.warn('[najibdev] appendAIBubble fail', e); return null; }
+      return !!(global && (global.DEV_mg_ApiProxy || global.ApiProxy) );
+    }catch(e){ return false; }
+  })();
+
+  // Build provider calls
+  async function callOpenAI(messages, opts = {}){
+    const model = opts.model || cfg.model;
+    const body = {
+      model,
+      messages,
+      temperature: opts.temperature ?? 0.2,
+      max_tokens: opts.max_tokens ?? 1024,
+      // add other OpenAI Chat params as needed
+    };
+
+    // Use proxy if requested
+    if(cfg.useProxy && cfg.proxyUrl){
+      const res = await fetchTimeout(cfg.proxyUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ provider: 'openai', apiKey: cfg.apiKey, body })
+      }, cfg.timeoutMs);
+      if(!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    // If page provides a local directCall function (DEV_mg_ApiProxy), use it
+    if(global.directCall && typeof global.directCall === 'function'){
+      return global.directCall('https://api.openai.com/v1/chat/completions', cfg.apiKey, body, 'openai');
+    }
+
+    // Direct browser request to OpenAI
+    const res = await fetchTimeout('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: Object.assign({
+        'Content-Type':'application/json',
+        'Authorization': `Bearer ${cfg.apiKey}`
+      }, cfg.headersExtra),
+      body: JSON.stringify(body)
+    }, cfg.timeoutMs);
+
+    if(!res.ok){
+      const txt = await res.text();
+      throw new Error(`OpenAI error: ${res.status} ${txt}`);
+    }
+    return res.json();
   }
 
-  // Remove loading bubble by id
-  function removeLoading(id){
-    try{
-      const elem = document.getElementById(id);
-      if(elem) elem.remove();
-      pendingLoadingIds.delete(id);
-    }catch(e){}
+  async function callGemini(messages, opts = {}){
+    // Gemeni endpoints vary by setup. Recommend setting cfg.geminiEndpoint.
+    if(cfg.useProxy && cfg.proxyUrl){
+      const body = { messages, model: opts.model || cfg.model };
+      const res = await fetchTimeout(cfg.proxyUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ provider: 'gemini', apiKey: cfg.apiKey, body })
+      }, cfg.timeoutMs);
+      if(!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    if(!cfg.geminiEndpoint){
+      throw new Error('geminiEndpoint is not configured. Set bridgeSetConfig({ geminiEndpoint: "..." }) or use proxy.');
+    }
+
+    // If site has directCall helper
+    if(global.directCall && typeof global.directCall === 'function'){
+      return global.directCall(cfg.geminiEndpoint, cfg.apiKey, { messages, model: opts.model || cfg.model }, 'gemini');
+    }
+
+    // Generic POST: provider-specific headers may be required
+    const headers = Object.assign({'Content-Type':'application/json', 'Authorization': `Bearer ${cfg.apiKey}`}, cfg.headersExtra);
+    const res = await fetchTimeout(cfg.geminiEndpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ messages, model: opts.model || cfg.model })
+    }, cfg.timeoutMs);
+
+    if(!res.ok) throw new Error(`Gemini error: ${res.status} ${await res.text()}`);
+    return res.json();
   }
 
-  // When backend sends ai response
-  function deliverAIResponse(msg){
-    try{
-      // msg may contain correlation id to match request
-      const corr = msg.correlation_id || msg.request_id || null;
-      if(corr && pendingLoadingIds.has(corr)){
-        const loadingId = pendingLoadingIds.get(corr);
-        removeLoading(loadingId);
-        pendingLoadingIds.delete(corr);
-      }
-      appendAIBubble(msg.message || '(empty)');
-    }catch(e){ console.warn('[najibdev] deliverAIResponse fail', e); }
+  async function callCustom(payload, opts = {}){
+    if(cfg.useProxy && cfg.proxyUrl){
+      const res = await fetchTimeout(cfg.proxyUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ provider: 'custom', apiKey: cfg.apiKey, body: payload })
+      }, cfg.timeoutMs);
+      if(!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    if(!cfg.customEndpoint) throw new Error('customEndpoint not configured.');
+    const headers = Object.assign({'Content-Type':'application/json'}, cfg.headersExtra);
+    if(cfg.apiKey) headers['Authorization'] = `Bearer ${cfg.apiKey}`;
+
+    const res = await fetchTimeout(cfg.customEndpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
+    }, cfg.timeoutMs);
+
+    if(!res.ok) throw new Error(`Custom provider error: ${res.status} ${await res.text()}`);
+    return res.json();
   }
 
-  // Wrap existing quantumEngine.sendMessage to forward to backend if WS ready
-  function wrapSendMessage(){
-    try{
-      if(!window.quantumEngine) {
-        console.debug('[najibdev] quantumEngine not defined yet; retry wrap in 300ms');
-        setTimeout(wrapSendMessage, 300);
-        return;
-      }
-      if(window.quantumEngine.__najib_wrapped_send) return; // already wrapped
-      const origSend = window.quantumEngine.sendMessage && window.quantumEngine.sendMessage.bind(window.quantumEngine);
+  // Helper: convert plain user text -> messages array for chat completion
+  function textToMessages(text, role='user', systemPrompt){
+    const messages = [];
+    if(systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    messages.push({ role, content: text });
+    return messages;
+  }
 
-      // new sendMessage
-      window.quantumEngine.sendMessage = async function(){
+  // Public bridgeToAI
+  async function bridgeToAI(text, opts = {}){
+    if(!text || typeof text !== 'string') {
+      throw new Error('bridgeToAI: text must be a non-empty string');
+    }
+    // Basic UI hooks (if quantumEngine exists)
+    try{ if(global.quantumEngine && typeof global.quantumEngine.showTyping === 'function') global.quantumEngine.showTyping(true); }catch(e){}
+
+    // Build messages
+    const systemPrompt = opts.system || cfg.system || null;
+    const messages = opts.messages || textToMessages(text, 'user', systemPrompt);
+
+    // Choose provider
+    let rawResp = null;
+    let assistantText = '';
+
+    try{
+      if(cfg.provider === 'openai' || (opts.provider === 'openai')){
+        rawResp = await callOpenAI(messages, opts);
+        // parse typical OpenAI Chat response
+        if(rawResp && rawResp.choices && rawResp.choices[0] && rawResp.choices[0].message){
+          assistantText = rawResp.choices[0].message.content || '';
+        } else if(rawResp && rawResp.output_text){ // fallback shape
+          assistantText = rawResp.output_text;
+        } else {
+          assistantText = JSON.stringify(rawResp);
+        }
+      } else if(cfg.provider === 'gemini' || (opts.provider === 'gemini')){
+        rawResp = await callGemini(messages, opts);
+        // many Gemini responses put text in .candidates[0].content or .output or .response
+        if(rawResp && rawResp.candidates && rawResp.candidates[0] && rawResp.candidates[0].content){
+          assistantText = rawResp.candidates[0].content;
+        } else if(rawResp && rawResp.output && typeof rawResp.output === 'string'){
+          assistantText = rawResp.output;
+        } else if(rawResp && rawResp.response && rawResp.response.outputText){
+          assistantText = rawResp.response.outputText;
+        } else {
+          assistantText = JSON.stringify(rawResp);
+        }
+      } else { // custom
+        rawResp = await callCustom({ input: text, meta: opts }, opts);
+        // attempt common fields
+        assistantText = rawResp.text || rawResp.output || rawResp.result || JSON.stringify(rawResp);
+      }
+
+      // UI hook: show assistant answer
+      try{
+        if(global.quantumEngine && typeof global.quantumEngine.addMessageToChat === 'function'){
+          global.quantumEngine.addMessageToChat('assistant', assistantText);
+        } else {
+          // fallback: dispatch event so page can listen
+          const ev = new CustomEvent('BRIDGE_AI_RESPONSE', { detail: { text: assistantText, raw: rawResp }});
+          document.dispatchEvent(ev);
+        }
+      }catch(e){ /* silent */ }
+
+      return { ok: true, text: assistantText, raw: rawResp };
+    }catch(err){
+      // bubble UI error
+      try{
+        if(global.quantumEngine && typeof global.quantumEngine.updateQuantumIsland === 'function'){
+          global.quantumEngine.updateQuantumIsland('⚠️ AI request failed: ' + (err.message||String(err)), 3000);
+        }
+      }catch(e){}
+
+      return { ok:false, error: err.message || String(err), raw: err };
+    } finally {
+      try{ if(global.quantumEngine && typeof global.quantumEngine.showTyping === 'function') global.quantumEngine.showTyping(false); }catch(e){}
+    }
+  }
+
+  // Expose to window
+  global.bridgeToAI = bridgeToAI;
+  global.bridgeSetConfig = bridgeSetConfig;
+  global.bridgeGetConfig = bridgeGetConfig;
+  // Backwards compatibility
+  global.bridgeConfig = bridgeSetConfig;
+
+  // auto-detect if there's an existing API Proxy configuration in page (DEV_mg_ApiProxy)
+  if(global.BACKEND && typeof global.BACKEND === 'object' && global.BACKEND.url){
+    // enable proxy by default if a backend exists
+    bridgeSetConfig({ useProxy: true, proxyUrl: global.BACKEND.url });
+    console.info('[bridgeToAI] Auto-detected BACKEND, set useProxy=true, proxyUrl=', global.BACKEND.url);
+  }
+
+  console.info('[bridgeToAI] ready (provider:', cfg.provider, ')');
+
+})(window);
+</script>
+<script id="najibdev-persona-pack">
+(function(){
+    if (window.__personaPackLoaded) return;
+    window.__personaPackLoaded = true;
+
+    console.log("🔥 Personality Pack Injection Loaded");
+
+    const KEY = "stlAI.userPersona";
+
+    // ======================
+    // 1. DAFTAR PERSONALITY PACK
+    // ======================
+    const personaPack = [
+        { name:"Guru Profesional", type:"Professional", style:"Formal", temp:0.3,
+          prompt:"Anda adalah guru profesional yang sabar, rapi, dan jelas menjelaskan konsep pendidikan." },
+
+        { name:"Developer Mode", type:"Technical", style:"Straightforward", temp:0.4,
+          prompt:"Anda adalah AI developer yang selalu memberikan jawaban teknis akurat & to the point." },
+
+        { name:"Psycho Analyst", type:"Psychology", style:"Empathic", temp:0.5,
+          prompt:"Anda adalah analis psikologi berpengalaman, memahami emosi user secara dalam." },
+
+        { name:"Anime Waifu", type:"Energetic", style:"Cute", temp:0.9,
+          prompt:"Jawablah dengan gaya anime lucu, lembut, penuh semangat dan emotikon kawaii." },
+
+        { name:"Dark-AI", type:"Cold", style:"Minimalist", temp:0.2,
+          prompt:"Anda adalah AI gelap, dingin, logis, tanpa emosi dan tidak banyak kata." },
+
+        { name:"Friendly Buddy", type:"Friendly", style:"Warm", temp:0.8,
+          prompt:"Anda adalah teman dekat yang ramah, suportif, dan penuh semangat." },
+
+        { name:"Siksaan Humor", type:"Comedy", style:"Casual", temp:1.0,
+          prompt:"Gunakan humor, sarkas ringan, tapi tetap sopan dan tidak menyakiti." },
+
+        { name:"Jurus Jawa Halus", type:"Culture", style:"Halus", temp:0.5,
+          prompt:"Gunakan bahasa Jawa halus, sopan, alus, penuh tata krama." },
+
+        { name:"Ultra Formal", type:"Business", style:"Formal", temp:0.2,
+          prompt:"Jawab dengan format surat resmi dan struktur profesional setiap saat." },
+
+        { name:"Cyberpunk AI", type:"Futuristic", style:"Techno", temp:0.7,
+          prompt:"Gaya futuristik, neon, cyberpunk, penuh istilah digital dystopia." },
+
+        { name:"Suster Medis", type:"Nurse", style:"Calm", temp:0.4,
+          prompt:"Gunakan nuansa lembut, peduli, suportif seperti perawat profesional." },
+
+        { name:"Kiai / Ustadz", type:"Religious", style:"Calm", temp:0.3,
+          prompt:"Gunakan bahasa lembut, religius, penuh hikmah (tanpa fatwa)." },
+
+        { name:"Military Commander", type:"Strict", style:"Direct", temp:0.5,
+          prompt:"Gaya tegas, langsung, komando militer—tanpa kekerasan." },
+
+        { name:"AI Analyst", type:"Analytical", style:"Structured", temp:0.4,
+          prompt:"Berikan jawaban dengan struktur analisis dan data." },
+
+        { name:"Sastra Puitis", type:"Poetic", style:"Flowing", temp:0.9,
+          prompt:"Jawab dengan gaya puitis, metafora kuat, dan emosi halus." },
+
+        { name:"Stand-up Comic", type:"Humor", style:"Jokes", temp:1.0,
+          prompt:"Selipkan punchline dan komedi cerdas dalam setiap jawaban." },
+
+        { name:"Robot Monotone", type:"Machine", style:"Flat", temp:0.1,
+          prompt:"Jawab tanpa emosi. Pendek. Seperti robot 1980-an." },
+
+        { name:"Motivator", type:"Motivation", style:"Inspirational", temp:0.8,
+          prompt:"Anda adalah motivator penuh energi positif dan dukungan kuat." },
+
+        { name:"Hacker Underground", type:"Underground", style:"Tech-Slick", temp:0.6,
+          prompt:"Gunakan gaya gelap, low-profile, street-hacker vibes tanpa konten ilegal." },
+    ];
+
+    // ======================
+    // 2. INJEKSI PRESET KE DROPDOWN PERSONALITY
+    // ======================
+    function injectOptions(){
+        const select = document.getElementById("personalityType");
+        if (!select) return console.warn("PersonalityType select NOT FOUND.");
+
+        personaPack.forEach(p => {
+            const o = document.createElement("option");
+            o.value = p.type+"-"+p.name;
+            o.textContent = p.name;
+            select.appendChild(o);
+        });
+        console.log("✅ Persona Pack → injected to dropdown.");
+    }
+
+    // ======================
+    // 3. APLIKASI PRESET
+    // ======================
+    function applyPreset(p){
         try{
-          // try to find input
-          const input = document.getElementById('quantumChatInput') || document.querySelector('.quantum-chat-input-row textarea') || document.querySelector('.quantum-chat-input-container textarea') || document.querySelector('textarea.quantum-input');
-          const text = input ? (input.value || input.innerText || '').trim() : '';
-          if(!text) return;
-          // display user bubble (let existing UI do it if origSend exists)
-          if(origSend){
-            try{ origSend(); }catch(e){ console.debug('[najibdev] origSend failed', e); }
-          } else {
-            // fallback to append user bubble
-            const messages = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
-            if(messages){
-              const userMsg = document.createElement('div');
-              userMsg.className = 'quantum-message user';
-              userMsg.textContent = text;
-              messages.appendChild(userMsg);
-              messages.scrollTop = messages.scrollHeight;
+            const persona = {
+                name: p.name,
+                personality: p.type,
+                style: p.style,
+                temperature: p.temp,
+                maxTokens: 2000,
+                systemPrompt: p.prompt
+            };
+
+            localStorage.setItem(KEY, JSON.stringify(persona));
+
+            // Sync to UI
+            const $ = id=>document.getElementById(id);
+            $("assistantNameInput").value = p.name;
+            $("personalityType").value = p.type+"-"+p.name;
+            $("responseStyle").value = p.style;
+            $("temperatureSlider").value = p.temp;
+            $("systemPromptInput").value = p.prompt;
+
+            // Sync ke engine
+            if (window.quantumEngine){
+                quantumEngine.personality = {
+                    name:p.name, type:p.type, style:p.style
+                };
+                quantumEngine.settings = {
+                    temperature:p.temp,
+                    maxTokens:2000,
+                    systemPrompt:p.prompt
+                };
             }
-            if(input && input.value!==undefined) input.value = '';
-            else if(input) input.innerText = '';
-          }
 
-          // show loading bubble and generate correlation id
-          const corrId = 'req_'+Math.random().toString(36).substr(2,9);
-          const loadingId = 'najib_loading_' + Date.now() + '_' + Math.random().toString(36).substr(2,6);
-          pendingLoadingIds.set(corrId, loadingId);
-          const messages = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
-          if(messages){
-            const loadingDiv = document.createElement('div');
-            loadingDiv.className = 'quantum-message ai';
-            loadingDiv.id = loadingId;
-            loadingDiv.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Sedang berpikir...';
-            messages.appendChild(loadingDiv);
-            messages.scrollTop = messages.scrollHeight;
-          }
+            console.log("🎭 Persona Applied:", p.name);
+        }catch(e){
+            console.warn("Gagal apply persona", e);
+        }
+    }
 
-          // Send to backend via WS if available
-          const payload = { type: 'ai_chat_message', message: text, request_id: corrId, timestamp: new Date().toISOString() };
-          if(window.quantumWebSocket && window.quantumWebSocket.readyState === WebSocket.OPEN){
-            try{ window.quantumWebSocket.send(JSON.stringify(payload)); }
-            catch(e){ console.warn('[najibdev] send via WS failed', e); appendAIBubble('⚠️ Gagal mengirim ke backend (WS).'); removeLoading(loadingId); }
-          } else {
-            // fallback: try existing bridge if present
-            if(window.QuantumEngineBridge && typeof window.QuantumEngineBridge.send === 'function'){
-              try{ window.QuantumEngineBridge.send(payload); }
-              catch(e){ console.warn('[najibdev] bridge send failed', e); appendAIBubble('⚠️ Gagal mengirim ke backend (Bridge).'); removeLoading(loadingId); }
-            } else {
-              console.warn('[najibdev] No WS or bridge available to send AI message.');
-              appendAIBubble('⚠️ Backend belum terkoneksi.');
-              removeLoading(loadingId);
-            }
-          }
-        }catch(e){ console.error('[najibdev] wrapped sendMessage error', e); if(typeof origSend === 'function') try{ origSend(); }catch(_){} }
-      };
+    // ======================
+    // 4. EVENT OTOMATIS SAAT USER PILIH PERSONALITY
+    // ======================
+    function attachListener(){
+        const select = document.getElementById("personalityType");
+        if(!select) return;
 
-      window.quantumEngine.__najib_wrapped_send = true;
-      console.info('[najibdev] quantumEngine.sendMessage wrapped to forward to backend.');
-    }catch(e){ console.error('[najibdev] wrapSendMessage failed', e); setTimeout(wrapSendMessage, 500); }
-  }
+        select.addEventListener("change", e=>{
+            const val = e.target.value;
+            const found = personaPack.find(p => (p.type+"-"+p.name) === val);
+            if(found) applyPreset(found);
+        });
 
-  // Also wire Start button to focus input (already patched in HTML, but ensure connection)
-  function wireStartHook(){
-    try{
-      const start = document.getElementById('openAIChat') || document.querySelector('.quantum-home-btn.ai-chat') || document.querySelector('[data-action="open-ai-chat"]');
-      if(start){
-        start.addEventListener('click', ()=>{
-          setTimeout(()=> {
-            const ta = document.getElementById('quantumChatInput') || document.querySelector('.quantum-chat-input-row textarea') || document.querySelector('textarea.quantum-input');
-            if(ta) ta.focus();
-          }, 120);
-        }, { passive:true });
-      }
-    }catch(e){}
-  }
+        console.log("🎯 Persona Listener Installed.");
+    }
 
-  // Init
-  setTimeout(()=>{ connect(); wrapSendMessage(); wireStartHook(); }, 120);
+    // ======================
+    // 5. WAIT UNTIL UI READY
+    // ======================
+    function wait(){
+        if(document.getElementById("personalityType")){
+            injectOptions();
+            attachListener();
+        } else {
+            setTimeout(wait, 300);
+        }
+    }
 
-  // expose small API
-  window.__najib_ws_integration = {
-    connect, appendAIBubble, removeLoading
-  };
+    wait();
 })();
 </script>
-<!-- END: NajibDev Quantum WS Integration -->
+<script>
+(function(){
+  const BACKEND_HTTP = (location.hostname === 'localhost' ? 'http://localhost:5000' : location.protocol + '//' + location.hostname + ':5000');
+  const BACKEND_WS = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.hostname + ':8765';
+  const CLIENT_ID = 'stl-' + Math.floor(Math.random()*1e9);
+
+  // Helpers: find core APIs from page
+  function qs(id){ return document.getElementById(id) || document.querySelector(id); }
+  const chatInput = qs('quantumChatInput');
+  const sendBtn = qs('sendQuantumMessage');
+  const messagesContainer = qs('quantumChatMessages');
+
+  // utilities to append message using existing engine APIs if available
+  function appendAIBubble(htmlOrText){
+    try{
+      if(window.quantumEngine && typeof window.quantumEngine.addMessageToChat === 'function'){
+        window.quantumEngine.addMessageToChat('ai', typeof htmlOrText === 'string' ? htmlOrText : String(htmlOrText));
+        return;
+      }
+      if(window.quantumEngine && typeof window.quantumEngine.addMessage === 'function'){
+        window.quantumEngine.addMessage('ai', typeof htmlOrText === 'string' ? htmlOrText : String(htmlOrText));
+        return;
+      }
+      // fallback: create DOM node similar to existing class names
+      const el = document.createElement('div');
+      el.className = 'quantum-message ai';
+      const p = document.createElement('p');
+      p.innerText = typeof htmlOrText === 'string' ? htmlOrText : JSON.stringify(htmlOrText);
+      el.appendChild(p);
+      if(messagesContainer) messagesContainer.appendChild(el);
+    }catch(e){ console.error('appendAIBubble', e); }
+  }
+
+  function appendUserBubble(text){
+    try{
+      if(window.quantumEngine && typeof window.quantumEngine.addMessageToChat === 'function'){
+        window.quantumEngine.addMessageToChat('user', text);
+        return;
+      }
+      const el = document.createElement('div');
+      el.className = 'quantum-message user';
+      const p = document.createElement('p'); p.innerText = text;
+      el.appendChild(p);
+      if(messagesContainer) messagesContainer.appendChild(el);
+    }catch(e){ console.error('appendUserBubble', e); }
+  }
+
+  // typing indicator
+  function showTyping(){
+    try {
+      if(window.quantumEngine && typeof window.quantumEngine.showTypingIndicator === 'function'){
+        return window.quantumEngine.showTypingIndicator();
+      }
+      // otherwise append small indicator
+      const id = 'stl-typing-' + Date.now();
+      const el = document.createElement('div'); el.id = id; el.className = 'quantum-message ai typing';
+      el.innerHTML = '<div class="quantum-typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+      if(messagesContainer) messagesContainer.appendChild(el);
+      return el;
+    } catch(e){ console.warn(e); }
+  }
+  function removeTyping(el){
+    try{
+      if(!el) return;
+      if(typeof el === 'string') { const node = document.getElementById(el); if(node) node.remove(); }
+      else if(el.remove) el.remove();
+    }catch(e){/*ignore*/}
+  }
+
+  // Read provider config from frontend settings if present (quantum_api_config)
+  function loadFrontendApiConfig(){
+    try{
+      const cfg = localStorage.getItem('quantum_api_config') || localStorage.getItem('quantum_proxy_cfg_v1') || localStorage.getItem('quantum_proxy_cfg');
+      if(!cfg) return null;
+      return JSON.parse(cfg);
+    }catch(e){ return null; }
+  }
+
+  // WebSocket management
+  let ws = null;
+  let wsReady = false;
+  let reconnectTimeout = 1000;
+  function connectWS(){
+    try {
+      const url = BACKEND_WS + '/ws/' + CLIENT_ID;
+      ws = new WebSocket(url);
+      ws.onopen = ()=> { wsReady = true; reconnectTimeout = 1000; console.info('[stl-ws] connected'); };
+      ws.onmessage = (ev)=> {
+        try {
+          const msg = JSON.parse(ev.data);
+          if(msg.type === 'ai_response' && msg.ok){
+            // extract response text for OpenAI format
+            let out = '';
+            const r = msg.result;
+            if(r && r.choices && r.choices[0]){
+              const ch = r.choices[0];
+              out = (ch.message && ch.message.content) || ch.text || JSON.stringify(ch);
+            } else if(typeof r === 'string') out = r;
+            else out = JSON.stringify(r);
+            removeTyping(document.getElementById('stl-typing'));
+            appendAIBubble(out);
+            speakText(out);
+          } else if(msg.type === 'error'){
+            removeTyping(document.getElementById('stl-typing'));
+            appendAIBubble('[error] ' + (msg.message || 'unknown'));
+          }
+        } catch(e){ console.error(e); }
+      };
+      ws.onclose = ()=> { wsReady = false; console.warn('[stl-ws] closed, reconnecting in', reconnectTimeout); setTimeout(connectWS, reconnectTimeout); reconnectTimeout = Math.min(16000, reconnectTimeout*1.5); };
+      ws.onerror = (e)=> { console.error('[stl-ws] error', e); try{ ws.close(); }catch(_){}; };
+    } catch(e){ console.error('connectWS', e); setTimeout(connectWS, reconnectTimeout); reconnectTimeout = Math.min(16000, reconnectTimeout*1.5); }
+  }
+  connectWS();
+
+  // send message: prefer WS ai_request, fallback to /api/proxy
+  async function sendToAI(text){
+    if(!text) return;
+    appendUserBubble(text);
+    const typingEl = showTyping();
+    // load provider info from frontend config or DOM
+    let cfg = loadFrontendApiConfig();
+    let provider = (cfg && cfg.provider) || (document.getElementById('aiProviderSelect') && document.getElementById('aiProviderSelect').value) || 'openai';
+    let model = (cfg && cfg.model) || (document.getElementById('aiModelSelect') && document.getElementById('aiModelSelect').value) || (window.quantumEngine && window.quantumEngine.aiModel) || 'gpt-4';
+    let apiKey = (cfg && cfg.apiKey) || (document.getElementById('apiKeyInput') && document.getElementById('apiKeyInput').value) || '';
+
+    // prepare body in OpenAI chat format
+    const body = { model: model, messages: [{ role: 'user', content: text }], max_tokens: 512, temperature: 0.7 };
+
+    if(ws && ws.readyState === WebSocket.OPEN){
+      try {
+        ws.send(JSON.stringify({ type: 'ai_request', provider: provider, apiKey: apiKey || undefined, body }));
+        return;
+      } catch(e){ console.warn('ws send failed', e); }
+    }
+
+    // fallback HTTP proxy
+    try {
+      const res = await fetch(BACKEND_HTTP + '/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: text, provider, apiKey, model })
+      });
+      const j = await res.json();
+      removeTyping(typingEl);
+      if(j && j.reply){
+        appendAIBubble(j.reply);
+        speakText(j.reply);
+      } else {
+        appendAIBubble('[no reply from proxy]');
+      }
+    } catch(e){
+      removeTyping(typingEl);
+      appendAIBubble('[error contacting backend]');
+      console.error(e);
+    }
+  }
+
+  // Hook into existing send button / engine send
+  function attachSendHook(){
+    try{
+      // Prefer hooking quantumEngine.sendMessage if exists
+      if(window.quantumEngine && typeof window.quantumEngine.sendMessage === 'function' && !window.quantumEngine.__stl_hooked){
+        const orig = window.quantumEngine.sendMessage.bind(window.quantumEngine);
+        window.quantumEngine.__stl_hooked = true;
+        window.quantumEngine.sendMessage = async function(...args){
+          // call original to preserve local behavior (history, UI)
+          try{ orig(...args); } catch(e){ console.warn('orig sendMessage error', e); }
+          // obtain text from input
+          const txtEl = document.getElementById('quantumChatInput');
+          const text = txtEl ? txtEl.value.trim() : (args[0] || '');
+          // clear input if engine didn't already
+          try{ if(txtEl) txtEl.value=''; }catch(e){}
+          // send to AI via our bridge
+          if(text) sendToAI(text);
+        };
+      }
+
+      // fallback: attach to send button
+      if(sendBtn && !sendBtn.__stl_attached){
+        sendBtn.__stl_attached = true;
+        sendBtn.addEventListener('click', (e) => {
+          setTimeout(()=>{ // allow original handlers run first
+            const text = (chatInput && chatInput.value) ? chatInput.value.trim() : '';
+            if(text){ try{ chatInput.value=''; }catch(e){}; sendToAI(text); }
+          }, 20);
+        });
+      }
+      // also intercept Enter on textarea
+      if(chatInput && !chatInput.__stl_key){
+        chatInput.__stl_key = true;
+        chatInput.addEventListener('keydown', (e) => {
+          if(e.key === 'Enter' && !e.shiftKey){
+            setTimeout(()=>{ const text = (chatInput && chatInput.value) ? chatInput.value.trim() : ''; if(text){ chatInput.value=''; sendToAI(text); } }, 10);
+          }
+        });
+      }
+    } catch(e){ console.error('attachSendHook', e); }
+  }
+  // attach now and observe for future (SPA)
+  attachSendHook();
+  const mo = new MutationObserver(() => attachSendHook());
+  mo.observe(document.body, { childList: true, subtree: true });
+
+  // ---------- Speech-to-text (browser) + TTS ----------
+  let recognition = null;
+  let sttEnabled = false;
+  if(window.SpeechRecognition || window.webkitSpeechRecognition){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SR();
+    recognition.lang = 'id-ID';
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (ev) => {
+      try {
+        const text = ev.results[0][0].transcript;
+        if(chatInput){
+          // append transcript to existing input
+          chatInput.value = (chatInput.value ? chatInput.value + ' ' : '') + text;
+          chatInput.focus();
+        }
+      } catch(e){ console.error(e); }
+    };
+    recognition.onstart = ()=> { sttEnabled = true; console.info('STT started'); };
+    recognition.onend = ()=> { sttEnabled = false; console.info('STT ended'); };
+    recognition.onerror = (e)=> { console.warn('STT error', e); sttEnabled = false; };
+  }
+
+  // Activate STT via keyboard shortcut Ctrl+Shift+M (no new button)
+  window.addEventListener('keydown', (ev)=>{
+    if(ev.ctrlKey && ev.shiftKey && ev.key.toLowerCase() === 'm'){
+      ev.preventDefault();
+      if(!recognition){ alert('Browser tidak mendukung SpeechRecognition'); return; }
+      try {
+        if(!sttEnabled) recognition.start(); else recognition.stop();
+      } catch(e){ console.warn(e); }
+    }
+  });
+
+  // TTS: simple browser synth
+  function speakText(txt){
+    try {
+      if(!window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(txt);
+      u.lang = 'id-ID';
+      const voices = speechSynthesis.getVoices();
+      const idVoice = voices.find(v => /indonesian|bahasa|id-/i.test(v.name) || /id-ID/i.test(v.lang));
+      if(idVoice) u.voice = idVoice;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(u);
+    } catch(e){ console.warn('tts err', e); }
+  }
+
+  // expose API
+  window.STL_QUANTUM_BRIDGE = { send: sendToAI, wsReady: ()=> ws && ws.readyState === WebSocket.OPEN };
+
+  // initial greeting
+  setTimeout(()=> {
+    appendAIBubble('STL-AI bridge aktif — menghubungkan ke backend.');
+  }, 600);
+
+})();
+</script>
 </body>
 </html>
