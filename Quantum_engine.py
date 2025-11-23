@@ -1,261 +1,262 @@
-#!/usr/bin/env python3
-"""
-Quantum Engine v2 - Hybrid AI Integration (OpenAI library + HTTP for Anthropic/Gemini + Custom endpoint)
-Features:
-- WebSocket server for UI integration
-- ai_config_update route to receive provider/model/api_key from frontend
-- Supports OpenAI via `openai` library (if installed)
-- Supports Anthropic & Gemini via HTTP (aiohttp)
-- Custom endpoints via HTTP POST
-- Per-client config storage (so each websocket can have its own API key / provider)
-- Graceful error handling and fallbacks
-"""
-
-import asyncio
-import json
-import logging
-import uuid
-from datetime import datetime
+# backend.py — patched for STL Quantum frontend (HTTP + WebSocket, multi-provider)
+# Replace your current backend.py with this file (or merge changes).
+import os, json, time, asyncio, logging
 from typing import Dict, Any, Optional
-
+from datetime import datetime
+import httpx
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import websockets
-import aiohttp
+from websockets.server import WebSocketServerProtocol
 
-# Optional: try to import openai library; if missing, we fallback with clear error message
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except Exception:
-    OPENAI_AVAILABLE = False
+# load env
+HTTP_HOST = os.getenv("HTTP_HOST", "0.0.0.0")
+HTTP_PORT = int(os.getenv("HTTP_PORT", "5000"))
+WS_HOST = os.getenv("WS_HOST", "0.0.0.0")
+WS_PORT = int(os.getenv("WS_PORT", "8765"))
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:5000").split(",") if o.strip()]
+SERVER_KEYS_JSON = os.getenv("SERVER_KEYS_JSON", None)
+SERVER_KEYS: Dict[str,str] = json.loads(SERVER_KEYS_JSON) if SERVER_KEYS_JSON else {}
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("QuantumEngineV2")
+HTTP_TIMEOUT = float(os.getenv("HTTP_TIMEOUT", "30.0"))
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "180"))
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger("backend")
 
-class QuantumEngineV2:
-    def __init__(self, host='0.0.0.0', port=8765):
-        self.host = host
-        self.port = port
-        self.connected_clients = set()
-        # store per-websocket config keyed by client_id (uuid)
-        self.client_configs: Dict[str, Dict[str, Any]] = {}
-        # simple message routing map
-        self.routes = {
-            "ping": self._handle_ping,
-            "ai_config_update": self._handle_ai_config_update,
-            "ai_chat_message": self._handle_ai_chat,
-            "telemetry_request": self._handle_telemetry_request
-        }
+# ---------- rate limiter ----------
+class RateLimiter:
+    def __init__(self, per_minute:int):
+        self.per_minute = per_minute
+        self.buckets = {}
+        self.lock = asyncio.Lock()
+    async def allow(self, ip:str) -> bool:
+        async with self.lock:
+            now = time.time()
+            b = self.buckets.get(ip)
+            if not b:
+                self.buckets[ip] = {"tokens": self.per_minute - 1, "last": now}
+                return True
+            elapsed = now - b["last"]
+            refill = (elapsed/60.0) * self.per_minute
+            b["tokens"] = min(self.per_minute, b["tokens"] + refill)
+            b["last"] = now
+            if b["tokens"] >= 1:
+                b["tokens"] -= 1
+                return True
+            return False
 
-    async def _handle_ping(self, message, ws, client_id):
-        return {"type": "pong", "timestamp": datetime.now().isoformat()}
+rate_limiter = RateLimiter(RATE_LIMIT_PER_MIN)
 
-    async def _handle_ai_config_update(self, message, ws, client_id):
-        # message expected: { type: "ai_config_update", provider, model, api_key, custom_endpoint(optional) }
-        cfg = {
-            "provider": message.get("provider"),
-            "model": message.get("model"),
-            "api_key": message.get("api_key"),
-            "custom_endpoint": message.get("custom_endpoint")
-        }
-        self.client_configs[client_id] = cfg
-        logger.info(f"[{client_id}] Saved AI config: provider={cfg.get('provider')} model={cfg.get('model')}")
-        return {"type": "ai_config_ack", "status": "ok", "config": {"provider": cfg.get("provider"), "model": cfg.get("model")}}
+# ---------- FastAPI ----------
+app = FastAPI(title="STL Quantum AI Proxy")
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS or ["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-    async def _handle_ai_chat(self, message, ws, client_id):
-        user_message = message.get("message", "")
-        cfg = self.client_configs.get(client_id, {})
-        provider = cfg.get("provider", "openai")
-        model = cfg.get("model", None)
-        api_key = cfg.get("api_key", None)
-        custom_endpoint = cfg.get("custom_endpoint", None)
+class ProxyRequest(BaseModel):
+    apiKey: Optional[str] = None
+    body: Dict[str,Any] = {}
+    model: Optional[str] = None
 
-        # simple validation
-        if provider is None or api_key is None and provider != "custom":
-            return {"type": "ai_chat_response", "error": "AI provider or API key not configured. Use ai_config_update first."}
+# ---------- provider callers ----------
+async def call_openai(api_key:str, body:Dict[str,Any], timeout=HTTP_TIMEOUT):
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type":"application/json"}
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=body, headers=headers)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"OpenAI error {resp.status_code}")
+        return resp.json()
 
-        try:
-            ai_text = await self._generate_ai_response(provider, model, api_key, custom_endpoint, user_message)
-            return {"type": "ai_chat_response", "message": ai_text, "timestamp": datetime.now().isoformat()}
-        except Exception as e:
-            logger.exception("Error generating AI response")
-            return {"type": "ai_chat_response", "error": str(e)}
+async def call_anthropic(api_key:str, body:Dict[str,Any], timeout=HTTP_TIMEOUT):
+    url = "https://api.anthropic.com/v1/complete"
+    headers = {"x-api-key": api_key, "Content-Type":"application/json"}
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=body, headers=headers)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail=f"Anthropic error {resp.status_code}")
+        return resp.json()
 
-    async def _handle_telemetry_request(self, message, ws, client_id):
-        # minimal telemetry example
-        return {"type": "telemetry_response", "connected_clients": len(self.connected_clients), "timestamp": datetime.now().isoformat()}
+async def call_custom(url:str, api_key:Optional[str], payload:Dict[str,Any], timeout=HTTP_TIMEOUT):
+    headers = {"Content-Type":"application/json"}
+    if api_key: headers["x-api-key"] = api_key
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(url, json=payload, headers=headers)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=502, detail="Custom provider error")
+        return resp.json()
 
-    async def _generate_ai_response(self, provider: str, model: Optional[str], api_key: Optional[str], custom_endpoint: Optional[str], prompt: str) -> str:
-        provider = (provider or "openai").lower()
+# ---------- HTTP endpoints ----------
+@app.get("/ping")
+async def ping():
+    return {"pong": True, "ts": datetime.utcnow().isoformat()+"Z", "ws": f"ws://{WS_HOST}:{WS_PORT}"}
 
-        if provider == "openai":
-            if not OPENAI_AVAILABLE:
-                raise RuntimeError("openai library not installed on server. Install 'openai' package or switch to custom/http mode.")
-            # configure key and call OpenAI ChatCompletion (synchronous library wrapped in asyncio)
-            openai.api_key = api_key
-            # prefer chat completions route; fallback to completion if model provided differently
-            try:
-                # use run_in_executor to avoid blocking if openai is sync-only
-                loop = asyncio.get_event_loop()
-                def call_openai_sync():
-                    # fallback: use ChatCompletion if available
-                    try:
-                        resp = openai.ChatCompletion.create(
-                            model=model or "gpt-4o-mini",
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.7,
-                            max_tokens=800
-                        )
-                        # support both choices/message and text return
-                        if isinstance(resp, dict) and "choices" in resp and len(resp["choices"])>0:
-                            # ChatCompletion: choices[0].message.content
-                            c0 = resp["choices"][0]
-                            if "message" in c0 and "content" in c0["message"]:
-                                return c0["message"]["content"]
-                            if "text" in c0:
-                                return c0["text"]
-                        # fallback string
-                        return str(resp)
-                    except Exception as e:
-                        raise
-
-                ai_text = await loop.run_in_executor(None, call_openai_sync)
-                return ai_text
-            except Exception as e:
-                logger.exception("OpenAI call failed")
-                raise
-
-        elif provider in ("anthropic", "claude"):
-            # Call Anthropic Claude over HTTP. API spec sometimes varies by version - we use v1/messages style as used in UI.
-            url = "https://api.anthropic.com/v1/messages"
-            headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-            body = {"model": model or "claude-2", "messages": [{"role": "user", "content": prompt}]}
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=body, timeout=30) as resp:
-                    text = await resp.text()
-                    if resp.status >= 400:
-                        raise RuntimeError(f"Anthropic API error: {resp.status} {text}")
-                    # attempt parse json
-                    try:
-                        j = await resp.json()
-                        # try common paths
-                        if "content" in j:
-                            return j.get("content")
-                        if "choices" in j and len(j["choices"])>0:
-                            c = j["choices"][0]
-                            if "message" in c and "content" in c["message"]:
-                                return c["message"]["content"]
-                            if "text" in c:
-                                return c["text"]
-                        return json.dumps(j)
-                    except Exception:
-                        return text
-
-        elif provider in ("google", "gemini"):
-            # Google Gemini: use custom HTTP endpoint pattern or require user to use custom_endpoint
-            # For safety, prefer custom_endpoint for Gemini usage.
-            if custom_endpoint:
-                url = custom_endpoint
-            else:
-                url = f"https://generativemodels.googleapis.com/v1/models/{model or 'gemini'}:generate"
-            headers = {"Content-Type": "application/json"}
-            # If user provided api_key, use it as Bearer token
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            payload = {"input": prompt, "maxOutputTokens": 800}
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload, timeout=30) as resp:
-                    text = await resp.text()
-                    if resp.status >= 400:
-                        raise RuntimeError(f"Gemini API error: {resp.status} {text}")
-                    try:
-                        j = await resp.json()
-                        # parse potential fields
-                        if "candidates" in j and len(j["candidates"])>0:
-                            return j["candidates"][0].get("content", j["candidates"][0])
-                        if "output" in j:
-                            return j["output"].get("text", json.dumps(j["output"]))
-                        return json.dumps(j)
-                    except Exception:
-                        return text
-
-        elif provider == "custom":
-            # Custom endpoint is required
-            if not custom_endpoint:
-                raise ValueError("Custom provider requires 'custom_endpoint' in config.")
-            headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-            payload = {"prompt": prompt, "model": model}
-            async with aiohttp.ClientSession() as session:
-                async with session.post(custom_endpoint, headers=headers, json=payload, timeout=30) as resp:
-                    text = await resp.text()
-                    if resp.status >= 400:
-                        raise RuntimeError(f"Custom endpoint error: {resp.status} {text}")
-                    # try to parse as json and find common fields
-                    try:
-                        j = await resp.json()
-                        if isinstance(j, dict):
-                            if "message" in j: return j["message"]
-                            if "output" in j and isinstance(j["output"], str): return j["output"]
-                            if "choices" in j and len(j["choices"])>0:
-                                c = j["choices"][0]
-                                if isinstance(c, dict) and "text" in c: return c["text"]
-                        return json.dumps(j)
-                    except Exception:
-                        return text
+@app.post("/api/v1/{provider}")
+async def proxy(provider: str, payload: ProxyRequest, request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not await rate_limiter.allow(client_ip):
+        raise HTTPException(status_code=429, detail="rate limit exceeded")
+    api_key = payload.apiKey or SERVER_KEYS.get(provider)
+    if not api_key:
+        raise HTTPException(status_code=400, detail="no api key available for provider")
+    body = payload.body or {}
+    try:
+        if provider.lower() in ("openai","gpt","openai_chat"):
+            res = await call_openai(api_key, body)
+        elif provider.lower() in ("anthropic",):
+            res = await call_anthropic(api_key, body)
+        elif provider.lower() == "custom":
+            url = body.get("url")
+            if not url: raise HTTPException(status_code=400, detail="body.url required for custom")
+            res = await call_custom(url, api_key, body.get("payload", {}))
         else:
-            raise ValueError(f"Unknown provider: {provider}")
+            if provider.startswith("http"):
+                res = await call_custom(provider, api_key, body)
+            else:
+                raise HTTPException(status_code=400, detail="unknown provider")
+        return JSONResponse({"ok": True, "result": res})
+    except HTTPException as he: raise he
+    except Exception as e:
+        logger.exception("HTTP proxy error")
+        raise HTTPException(status_code=500, detail="internal proxy error")
 
-    async def handler(self, websocket, path):
-        client_id = str(uuid.uuid4())
-        self.connected_clients.add(websocket)
-        # default empty config until client sends ai_config_update
-        self.client_configs[client_id] = {}
-        logger.info(f"Client connected: {client_id}")
+# Simple proxy used by frontend's Hybrid Proxy Hook (quantum proxy)
+@app.post("/api/proxy")
+async def simple_proxy(payload: Dict[str,Any], request: Request):
+    client_ip = request.client.host if request.client else "unknown"
+    if not await rate_limiter.allow(client_ip):
+        raise HTTPException(status_code=429, detail="rate limit exceeded")
+    provider = payload.get("provider") or payload.get("aiProvider") or "openai"
+    api_key = payload.get("apiKey") or SERVER_KEYS.get(provider)
+    prompt = payload.get("prompt") or payload.get("message") or payload.get("text") or ""
+    model = payload.get("model") or payload.get("modelName") or "gpt-4"
+    if provider.lower() in ("openai","gpt","openai_chat"):
+        if not api_key:
+            raise HTTPException(status_code=400, detail="no api key")
+        body = {"model": model, "messages": [{"role":"user","content":prompt}], "max_tokens": payload.get("max_tokens",512), "temperature": payload.get("temperature",0.7)}
+        res = await call_openai(api_key, body)
+        # try to extract reply
+        reply = None
+        if isinstance(res, dict):
+            c = res.get("choices")
+            if c and isinstance(c, list) and len(c)>0:
+                first = c[0]
+                if first.get("message"):
+                    reply = first["message"].get("content")
+                else:
+                    reply = first.get("text") or json.dumps(first)
+        if reply is None:
+            reply = json.dumps(res)[:2000]
+        return {"ok": True, "reply": reply, "raw": res}
+    else:
+        if provider.startswith("http"):
+            res = await call_custom(provider, api_key, payload)
+            return {"ok": True, "reply": str(res)}
+        return {"ok": True, "reply": f"[mock reply] provider={provider} prompt={prompt[:120]}"}
 
-        # send initial connection info
-        init_msg = {"type": "connection_established", "client_id": client_id, "timestamp": datetime.now().isoformat()}
-        await websocket.send(json.dumps(init_msg))
+# ---------- WebSocket server ----------
+WS_CLIENTS = {}
+WS_LOCK = asyncio.Lock()
 
+async def default_ws_handler(ws: WebSocketServerProtocol, path: str):
+    peer = ws.remote_address
+    client_id = f"{peer[0]}:{peer[1]}:{path}"
+    async with WS_LOCK:
+        WS_CLIENTS[client_id] = ws
+    logger.info("WS CONNECT %s (path=%s total=%d)", client_id, path, len(WS_CLIENTS))
+    try:
+        async for raw in ws:
+            try:
+                msg = json.loads(raw)
+            except Exception:
+                await ws.send(json.dumps({"type":"error","message":"invalid json"}))
+                continue
+            typ = msg.get("type")
+            if typ == "ping":
+                await ws.send(json.dumps({"type":"pong","ts":datetime.utcnow().isoformat()+"Z"})); continue
+            if typ == "ai_request":
+                provider = msg.get("provider") or "openai"
+                body = msg.get("body") or {}
+                api_key = msg.get("apiKey") or SERVER_KEYS.get(provider)
+                if not api_key:
+                    await ws.send(json.dumps({"type":"error","message":"provider or apiKey missing"}))
+                    continue
+                if not await rate_limiter.allow(client_id.split(":")[0]):
+                    await ws.send(json.dumps({"type":"error","message":"rate limit exceeded"})); continue
+                # background handler
+                asyncio.create_task(handle_ai_request_ws(ws, client_id, provider, api_key, body))
+                continue
+            if typ == "subscribe_ui":
+                await ws.send(json.dumps({"type":"subscribed","what":"ui_events"})); continue
+            # echo fallback
+            await ws.send(json.dumps({"type":"echo","payload":msg}))
+    except websockets.exceptions.ConnectionClosed:
+        logger.info("WS CLOSED %s", client_id)
+    except Exception as e:
+        logger.exception("WS loop error")
+    finally:
+        async with WS_LOCK:
+            WS_CLIENTS.pop(client_id, None)
+        logger.info("WS DISCONNECT %s (remaining=%d)", client_id, len(WS_CLIENTS))
+
+async def handle_ai_request_ws(ws: WebSocketServerProtocol, client_id:str, provider:str, api_key:str, body:Dict[str,Any]):
+    logger.info("WS ai_request provider=%s client=%s", provider, client_id)
+    try:
+        if provider.lower() in ("openai","gpt","openai_chat"):
+            result = await call_openai(api_key, body)
+        elif provider.lower() in ("anthropic",):
+            result = await call_anthropic(api_key, body)
+        else:
+            if provider.startswith("http"):
+                result = await call_custom(provider, api_key, body)
+            else:
+                await ws.send(json.dumps({"type":"error","message":"unknown provider"})); return
+        await ws.send(json.dumps({"type":"ai_response","ok": True, "result": result}))
+    except Exception as e:
+        logger.exception("ai_request_ws failed")
         try:
-            async for raw in websocket:
-                try:
-                    message = json.loads(raw)
-                except Exception:
-                    await websocket.send(json.dumps({"type": "error", "message": "invalid_json"}))
-                    continue
+            await ws.send(json.dumps({"type":"error","message": str(e)}))
+        except: pass
 
-                mtype = message.get("type")
-                handler = self.routes.get(mtype)
-                if not handler:
-                    await websocket.send(json.dumps({"type": "error", "message": f"unknown_type:{mtype}"}))
-                    continue
+async def broadcast_ws(message: str):
+    async with WS_LOCK:
+        clients = list(WS_CLIENTS.items())
+    for cid, ws in clients:
+        try:
+            if ws and not ws.closed:
+                await ws.send(message)
+        except Exception:
+            logger.exception("broadcast failed for %s", cid)
 
-                try:
-                    response = await handler(message, websocket, client_id)
-                    if response is not None:
-                        await websocket.send(json.dumps(response))
-                except Exception as e:
-                    logger.exception("Handler error")
-                    await websocket.send(json.dumps({"type": "error", "message": str(e)}))
+# ---------- runner ----------
+async def start_ws_server_single(host, port, handler):
+    logger.info("Starting WS on %s:%d", host, port)
+    async with websockets.serve(handler, host, port, ping_interval=20, ping_timeout=10, max_size=2**20):
+        await asyncio.Future()
 
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"Client disconnected: {client_id}")
-        finally:
-            self.connected_clients.discard(websocket)
-            if client_id in self.client_configs:
-                del self.client_configs[client_id]
+async def start_http_app():
+    import uvicorn
+    config = uvicorn.Config("backend:app", host=HTTP_HOST, port=HTTP_PORT, log_level="info", loop="asyncio", lifespan="off")
+    server = uvicorn.Server(config)
+    logger.info("Starting HTTP server on %s:%d", HTTP_HOST, HTTP_PORT)
+    await server.serve()
 
-    async def start(self):
-        logger.info(f"Starting Quantum Engine v2 on {self.host}:{self.port}")
-        server = await websockets.serve(self.handler, self.host, self.port)
-        await server.wait_closed()
+async def start_ws_servers():
+    await start_ws_server_single(WS_HOST, WS_PORT, default_ws_handler)
 
+async def main():
+    await asyncio.gather(start_ws_servers(), start_http_app())
 
 if __name__ == "__main__":
-    engine = QuantumEngineV2(host="0.0.0.0", port=8765)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--host'); parser.add_argument('--http-port', type=int); parser.add_argument('--ws-port', type=int)
+    args = parser.parse_args()
+    if args.host: HTTP_HOST = args.host
+    if args.http_port: HTTP_PORT = args.http_port
+    if args.ws_port: WS_PORT = args.ws_port
     try:
-        asyncio.run(engine.start())
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Shutting down Quantum Engine V2")
+        logger.info("Shutting down.")
