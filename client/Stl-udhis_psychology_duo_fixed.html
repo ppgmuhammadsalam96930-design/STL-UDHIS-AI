@@ -14323,31 +14323,6 @@ Format tabel: KD / Indikator / Kegiatan Pembelajaran / Asesmen / Alat & Sumber`
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' " +
       "xmlns:w='urn:schemas-microsoft-com:office:word' " +
       "xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>" + filename + "</title>
-<style id="layoutfixer_psychology_duo">
-#toggleAdultPsychology,
-#psychologychild-toggle {
- width:20px!important;
- height:20px!important;
- border-radius:12px!important;
- background:rgba(255,255,255,0.18)!important;
- backdrop-filter:blur(6px)!important;
- border:none!important;
- color:#fff!important;
- font-size:11px!important;
- display:flex!important;
- align-items:center!important;
- justify-content:center!important;
- cursor:pointer!important;
- z-index:10000!important;
- transition:.22s!important;
-}
-#toggleAdultPsychology:hover,
-#psychologychild-toggle:hover {
- background:rgba(0,0,0,0.88)!important;
- transform:scale(1.18)!important;
- box-shadow:0 0 10px rgba(0,180,255,0.55)!important;
-}
-</style>
 
 </head><body>";
     const footer = "</body></html>";
@@ -15682,31 +15657,6 @@ Gunakan bahasa ramah anak, sisipkan instruksi dan tabel kerja.`
   function downloadDocFromHtml(html, filename='document'){
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>"+filename+"</title>";
     const style = `<style>body{font-family: 'Times New Roman', Times, serif; font-size:12pt;}</style>
-<style id="layoutfixer_psychology_duo">
-#toggleAdultPsychology,
-#psychologychild-toggle {
- width:20px!important;
- height:20px!important;
- border-radius:12px!important;
- background:rgba(255,255,255,0.18)!important;
- backdrop-filter:blur(6px)!important;
- border:none!important;
- color:#fff!important;
- font-size:11px!important;
- display:flex!important;
- align-items:center!important;
- justify-content:center!important;
- cursor:pointer!important;
- z-index:10000!important;
- transition:.22s!important;
-}
-#toggleAdultPsychology:hover,
-#psychologychild-toggle:hover {
- background:rgba(0,0,0,0.88)!important;
- transform:scale(1.18)!important;
- box-shadow:0 0 10px rgba(0,180,255,0.55)!important;
-}
-</style>
 
 </head><body>`;
     const footer="</body></html>";
@@ -16414,31 +16364,6 @@ try {
   });
 })();
 </script>
-<style id="layoutfixer_psychology_duo">
-#toggleAdultPsychology,
-#psychologychild-toggle {
-    width: 20px !important;
-    height: 20px !important;
-    border-radius: 12px !important;
-    background: rgba(255,255,255,0.18) !important;
-    backdrop-filter: blur(6px) !important;
-    border: none !important;
-    color: #fff !important;
-    font-size: 11px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    cursor: pointer !important;
-    z-index: 10000 !important;
-    transition: .22s !important;
-}
-#toggleAdultPsychology:hover,
-#psychologychild-toggle:hover {
-    background: rgba(0,0,0,0.88) !important;
-    transform: scale(1.18) !important;
-    box-shadow: 0 0 10px rgba(0,180,255,0.55) !important;
-}
-</style>
 <script>
   // === BACKUP & SECURE URI endpoints (add to server.js) ===
 const AWS = require('aws-sdk');
@@ -45875,6 +45800,315 @@ document.head.appendChild(notificationStyle);
   }catch(e){
     try{ console.error('[PATCH:APIKEY->BACKEND] init failed', e); }catch(e){}
   }
+})();
+</script>
+<script id="stl-ai-autowire-v1">
+(function(){
+  if(window.__stl_ai_autowire_v1) return;
+  window.__stl_ai_autowire_v1 = true;
+
+  // ---------- CONFIG ----------
+  const LS_KEY = 'quantum_api_config'; // keep same shape as existing core
+  const DEFAULT_BACKEND = (window.BACKEND_URL && String(window.BACKEND_URL)) || 'http://localhost:5000';
+  const DEFAULT_WS = (DEFAULT_BACKEND.replace(/^http/, 'ws').replace(/\/$/, '')) + ':8765'.replace('::', ':'); // fallback
+  const PROXY_FALLBACK = DEFAULT_BACKEND + '/api/proxy';
+  const PROVIDER_DEFAULT = 'openai';
+  const PREWARM_INTERVAL = 60_000; // re-warm every minute
+
+  // ---------- UTIL ----------
+  const $ = (sel, root=document) => root.querySelector(sel);
+  const nowISO = () => new Date().toISOString();
+
+  function safeParse(v){ try{ return JSON.parse(v); }catch(e){ return null; } }
+  function saveCfg(cfg){ localStorage.setItem(LS_KEY, JSON.stringify(cfg)); }
+  function loadCfg(){ return safeParse(localStorage.getItem(LS_KEY)) || {}; }
+
+  // merge and keep shape compat
+  function upsertCfg(partial){
+    const cur = loadCfg();
+    const merged = Object.assign({
+      provider: PROVIDER_DEFAULT,
+      apiKey: '',
+      customEndpoint: '',
+      model: 'gpt-4',
+      temperature: 0.7,
+      maxTokens: 1024,
+      useProxy: true // default to proxy
+    }, cur, partial||{});
+    saveCfg(merged);
+    return merged;
+  }
+
+  // ---------- Find API-key input (robust detection) ----------
+  function findApiKeyInput(){
+    const candidates = [
+      'input[placeholder*="API Key"]',
+      'input[placeholder*="api key"]',
+      'input[id*="api"]',
+      'input[id*="key"]',
+      'input[name*="api"]',
+      'input[name*="key"]',
+      'input[class*="api"]',
+      'input[class*="key"]',
+      'textarea[placeholder*="API Key"]'
+    ];
+    for(const s of candidates){
+      const el = document.querySelector(s);
+      if(el) return el;
+    }
+    // try scanning sidebar forms
+    const side = document.querySelector('.quantum-tools-sidebar, #quantumToolsSidebar, .tools-sidebar, #quantumSidebar');
+    if(side){
+      const inputs = side.querySelectorAll('input, textarea');
+      for(const i of inputs){
+        const lab = (i.getAttribute('aria-label')||'') + ' ' + (i.placeholder||'') + ' ' + (i.title||'') + ' ' + (i.id||'') + ' ' + (i.name||'');
+        if(/api.*key|key.*api|openai|anthropic|gpt/i.test(lab)) return i;
+      }
+    }
+    return null;
+  }
+
+  // ---------- Backend prewarm + WebSocket fast-path ----------
+  let ws = null;
+  let wsReady = false;
+  let lastPrewarm = 0;
+
+  function connectWS(){
+    try {
+      // Derive ws url: prefer explicit window.QUANTUM_WS or DEFAULT_WS
+      const explicit = window.QUANTUM_WS || (window.BACKEND_WS && String(window.BACKEND_WS));
+      const wsUrl = explicit || (DEFAULT_BACKEND.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws') || DEFAULT_WS;
+      if(ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      ws = new WebSocket(wsUrl);
+      ws.addEventListener('open', ()=> {
+        wsReady = true;
+        try { ws.send(JSON.stringify({type:'client_ready', ts: nowISO(), client: 'stl-frontend-autowire'})); }catch(e){}
+        console.info('[STL-AUTOWIRE] WS open', wsUrl);
+      });
+      ws.addEventListener('message', (ev)=>{
+        try {
+          const data = JSON.parse(ev.data);
+          document.dispatchEvent(new CustomEvent('STL_WS_MESSAGE', { detail: data }));
+          // if AI response -> pipe to engine chat
+          if(data.type === 'ai_chat_response' && window.quantumEngine && typeof window.quantumEngine.addMessageToChat === 'function') {
+            try{ window.quantumEngine.addMessageToChat('ai', data.message || data.reply || JSON.stringify(data)); }catch(e){ }
+          }
+        }catch(e){}
+      });
+      ws.addEventListener('close', ()=> { wsReady = false; console.warn('[STL-AUTOWIRE] WS closed, will reconnect'); setTimeout(connectWS, 1200); });
+      ws.addEventListener('error', (e)=> { console.error('[STL-AUTOWIRE] WS error', e); wsReady = false; });
+    } catch(e){ console.warn('[STL-AUTOWIRE] connectWS failed', e); wsReady = false; }
+  }
+
+  async function httpPostJson(url, body, timeout=30000){
+    const ctl = new AbortController();
+    const id = setTimeout(()=> ctl.abort(), timeout);
+    try{
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body),
+        signal: ctl.signal,
+        keepalive: true
+      });
+      clearTimeout(id);
+      if(!res.ok){
+        const t = await res.text();
+        throw new Error(`HTTP ${res.status} ${t}`);
+      }
+      return await res.json();
+    }catch(e){ clearTimeout(id); throw e; }
+  }
+
+  // Prewarm: open (connectWS) + small test call that includes apiKey masked
+  async function prewarmBackend(cfg){
+    try{
+      if(Date.now() - lastPrewarm < PREWARM_INTERVAL) return;
+      lastPrewarm = Date.now();
+      connectWS();
+      // send light ping to backend proxy to warm underlying pools
+      const url = (cfg.useProxy ? (cfg.proxyUrl || PROXY_FALLBACK) : (cfg.customEndpoint || '')) || PROXY_FALLBACK;
+      if(cfg.useProxy){
+        // submit a non-sensitive ping: provider + masked key
+        const masked = cfg.apiKey ? (cfg.apiKey.slice(0,4) + '…' + cfg.apiKey.slice(-4)) : '';
+        try {
+          await httpPostJson(url, { provider: cfg.provider || PROVIDER_DEFAULT, apiKey: masked, prompt: "[prewarm ping]" , model: cfg.model || 'gpt-4' }, 7000);
+        } catch(e){
+          // ignore errors but log
+          console.debug('[STL-AUTOWIRE] prewarm proxy ping failed (expected in dev):', e.message);
+        }
+      } else {
+        // direct prewarm: try HEAD to custom endpoint (if provided)
+        if(cfg.customEndpoint){
+          try { await fetch(cfg.customEndpoint, { method: 'HEAD', mode: 'no-cors' }); } catch(e){}
+        }
+      }
+    }catch(e){ console.warn('[STL-AUTOWIRE] prewarm error', e); }
+  }
+
+  // ---------- main bridge: sendToAI (tries fast WS first, else HTTP proxy) ----------
+  async function sendToAI(prompt, opts){
+    opts = opts || {};
+    const cfg = loadCfg();
+    const provider = cfg.provider || PROVIDER_DEFAULT;
+    const useProxy = !!cfg.useProxy;
+    const model = opts.model || cfg.model || 'gpt-4';
+    // structure body for backend v7 proxy compatibility
+    const body = { model, messages: [ { role:'user', content: prompt } ], max_tokens: opts.maxTokens || cfg.maxTokens || 1024, temperature: opts.temperature || cfg.temperature || 0.7 };
+
+    // Try WS fast path: send ai_request if ws ready and backend supports it
+    try{
+      if(ws && wsReady){
+        const msg = { type: 'ai_request', provider, apiKey: cfg.apiKey, body, ts: nowISO(), meta:{client:'stl-autowire'} };
+        ws.send(JSON.stringify(msg));
+        // We cannot block waiting for WS response here (backend may push ai_chat_response). Return optimistic ack
+        return { ok: true, via: 'ws', queued: true };
+      }
+    }catch(e){ console.debug('[STL-AUTOWIRE] ws send failed', e); }
+
+    // Fallback: HTTP proxy route
+    try{
+      const endpoint = (useProxy ? (cfg.proxyUrl || PROXY_FALLBACK) : (cfg.customEndpoint || PROXY_FALLBACK));
+      // If backend expects /api/v1/{provider}, prefer that form
+      let httpUrl = endpoint;
+      if(httpUrl.endsWith('/api/proxy') || httpUrl.endsWith('/api/proxy/')) {
+        // pass generic shape
+        const payload = { provider, apiKey: cfg.apiKey, prompt, model, body };
+        const json = await httpPostJson(httpUrl, payload, 25000);
+        return { ok:true, via:'http-proxy', raw: json, reply: json.reply || json.result || null };
+      } else if(/\/api\/v1\/[^\/]+\/?$/.test(httpUrl) || httpUrl.endsWith('/api/v1') || httpUrl.includes('/api/v1/')){
+        // user provided API v1 endpoint already
+        const payload = { apiKey: cfg.apiKey, body };
+        const json = await httpPostJson(httpUrl, payload, 25000);
+        return { ok:true, via:'http-v1', raw: json, reply: (json && json.reply) || (json && json.result) || null };
+      } else {
+        // try to post to /api/v1/{provider}
+        const candidate = httpUrl.replace(/\/$/,'') + '/api/v1/' + provider;
+        try{
+          const payload = { apiKey: cfg.apiKey, body };
+          const json = await httpPostJson(candidate, payload, 25000);
+          return { ok:true, via:'http-v1-candidate', raw: json, reply: (json && json.reply) || (json && json.result) || null };
+        }catch(e){
+          // last fallback: post to endpoint as /api/proxy form
+          const payload = { provider, apiKey: cfg.apiKey, body };
+          const json = await httpPostJson(httpUrl, payload, 25000);
+          return { ok:true, via:'http-fallback', raw: json, reply: json.reply || json.result || null };
+        }
+      }
+    }catch(e){
+      console.error('[STL-AUTOWIRE] http sendToAI failed', e);
+      return { ok:false, error: String(e) };
+    }
+  }
+
+  // ---------- Auto-bind to existing chat send (non-intrusive) ----------
+  function patchSendMessage(){
+    try{
+      // If quantumEngine exists and has sendMessage, wrap it.
+      if(window.quantumEngine && typeof window.quantumEngine.sendMessage === 'function' && !window.quantumEngine._stl_patched_send){
+        const orig = window.quantumEngine.sendMessage.bind(window.quantumEngine);
+        window.quantumEngine._stl_patched_send = true;
+
+        window.quantumEngine.sendMessage = async function(){
+          try{
+            const input = document.getElementById('quantumChatInput') || document.querySelector('textarea[placeholder*="Message"], input[placeholder*="Message"]');
+            const msg = input ? input.value.trim() : '';
+            if(!msg) return;
+            // show user's message locally if engine uses addMessageToChat
+            if(window.quantumEngine.addMessageToChat) window.quantumEngine.addMessageToChat('user', msg);
+            if(input) input.value = '';
+
+            const cfg = loadCfg();
+            if(!cfg.apiKey && cfg.provider !== 'custom'){
+              if(window.quantumEngine.addMessageToChat) window.quantumEngine.addMessageToChat('system', '⚠️ Please input your API key first.');
+              return;
+            }
+
+            if(window.quantumEngine.addMessageToChat) window.quantumEngine.addMessageToChat('ai', '⏳ Thinking...');
+
+            // Call fast path
+            const resp = await sendToAI(msg, { model: cfg.model, temperature: cfg.temperature, maxTokens: cfg.maxTokens });
+
+            // If via ws and queued, actual response will arrive via WS handler; otherwise show reply
+            if(resp && resp.reply){
+              if(window.quantumEngine.addMessageToChat) window.quantumEngine.addMessageToChat('ai', resp.reply);
+            } else if(resp && resp.ok && resp.via === 'ws'){
+              // queued; backend should push ai_chat_response via WS. Fallback: show acknowledgement
+              if(window.quantumEngine.addMessageToChat) window.quantumEngine.addMessageToChat('ai', 'Response queued via fast WS...');
+            } else {
+              if(window.quantumEngine.addMessageToChat) window.quantumEngine.addMessageToChat('system', '⚠️ AI call failed: ' + (resp.error || 'unknown'));
+            }
+          }catch(e){
+            console.error('[STL-AUTOWIRE] patched sendMessage error', e);
+            try{ window.quantumEngine.addMessageToChat('system', '❌ AI Error: '+e.message); }catch(_) {}
+          }
+        };
+        console.info('[STL-AUTOWIRE] quantumEngine.sendMessage patched -> fast AI path');
+      }
+    }catch(e){ console.warn('[STL-AUTOWIRE] patchSendMessage failed', e); }
+  }
+
+  // ---------- Auto-listen to API-key input and persist (no new UI) ----------
+  function watchApiKeyInput(){
+    try{
+      const input = findApiKeyInput();
+      if(!input){
+        // retry later
+        setTimeout(watchApiKeyInput, 600);
+        return;
+      }
+      // initially load into input if blank
+      const cur = loadCfg();
+      if(cur.apiKey && (!input.value || input.value.trim()==='')) input.value = cur.apiKey;
+
+      // on blur / change -> save into LS and trigger prewarm
+      const handler = (ev) => {
+        const val = (input.value||'').trim();
+        if(!val) return;
+        upsertCfg({ apiKey: val });
+        prewarmBackend(loadCfg());
+        console.info('[STL-AUTOWIRE] API key captured & stored (masked)', val.slice(0,4) + '…' + val.slice(-4));
+      };
+      input.addEventListener('blur', handler);
+      input.addEventListener('change', handler);
+      input.addEventListener('paste', ()=> setTimeout(handler,120));
+      input.addEventListener('keyup', (ev)=> { if(ev.key === 'Enter') handler(); });
+
+      console.info('[STL-AUTOWIRE] watching API-key input');
+    }catch(e){ console.warn('[STL-AUTOWIRE] watchApiKeyInput error', e); setTimeout(watchApiKeyInput, 1000); }
+  }
+
+  // ---------- Auto-start & periodic tasks ----------
+  function boot(){
+    try{
+      // ensure quantumEngine namespace minimal structure
+      window.quantumEngine = window.quantumEngine || {};
+      window.quantumEngine.addMessageToChat = window.quantumEngine.addMessageToChat || function(t,m){ console.log('[quantumEngine.chat]', t, m); };
+
+      // connect WS and patch send
+      connectWS();
+      patchSendMessage();
+      watchApiKeyInput();
+      // attempt immediate prewarm with saved cfg
+      setTimeout(()=> prewarmBackend(loadCfg()), 220);
+
+      // periodic prewarm
+      setInterval(()=> prewarmBackend(loadCfg()), PREWARM_INTERVAL);
+
+      // listen to backend-pushed ai responses and pipe to chat UI
+      document.addEventListener('STL_WS_MESSAGE', (ev)=>{
+        const d = ev.detail || {};
+        if(d.type === 'ai_chat_response' && window.quantumEngine && typeof window.quantumEngine.addMessageToChat === 'function'){
+          window.quantumEngine.addMessageToChat('ai', d.message || d.reply || JSON.stringify(d));
+        }
+      });
+
+      console.info('[STL-AUTOWIRE] booted (no new UI added).');
+    }catch(e){ console.error('[STL-AUTOWIRE] boot failed', e); }
+  }
+
+  // run after DOM ready
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 30);
 })();
 </script>
 </body>
