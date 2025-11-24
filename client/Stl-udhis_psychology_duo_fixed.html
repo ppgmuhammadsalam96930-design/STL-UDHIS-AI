@@ -46470,5 +46470,189 @@ document.head.appendChild(notificationStyle);
   safeLog('AI Global Engine V2 injected');
 })();
 </script>
+<!-- NajibDev AI Global Engine V2 (Standalone Injector) -->
+<script>
+(function(){
+  'use strict';
+
+  const META = { name: 'NajibDev AI Global Engine V2', ver: '2.0' };
+  const WS_URL_DEFAULT =
+    (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'ws://localhost:8765'
+      : (window.__STL_BACKEND_WS__ || 'ws://localhost:8765');
+
+  const HTTP_PROXY_DEFAULT =
+    (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'http://localhost:5000/api/proxy'
+      : (window.__STL_BACKEND_PROXY__ || '/api/proxy');
+
+
+  /* -----------------------------------------
+     UTILITIES
+  ------------------------------------------*/
+  const $ = id => document.getElementById(id);
+  const now = () => Date.now();
+  const log = (...a)=>console.info('[najibv2]',...a);
+
+
+  /* -----------------------------------------
+     APPEND CHAT MESSAGE (Safe)
+  ------------------------------------------*/
+  function safeAppendMessage(content, opts = {}) {
+    const role = opts.role || 'ai';
+    const html = !!opts.isHtml;
+
+    // Prefer engine functions
+    try {
+      if (typeof window.appendAiResponseToChat === 'function') {
+        window.appendAiResponseToChat(html ? content : String(content), String(content));
+        return;
+      }
+    } catch(e){}
+
+    try {
+      if (window.quantumEngine && typeof window.quantumEngine.addMessageToChat === 'function') {
+        window.quantumEngine.addMessageToChat({ role, text:String(content) });
+        return;
+      }
+    } catch(e){}
+
+    try {
+      if (typeof window.addMessageToChat === 'function') {
+        window.addMessageToChat({ role, text:String(content) });
+        return;
+      }
+    } catch(e){}
+
+    // DOM fallback
+    const container = $('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+    if (!container) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'quantum-message ' + (role === 'user' ? 'user' : 'ai');
+    wrap.innerHTML = html ? content : ('<p>' + String(content).replace(/\n/g,'<br>') + '</p>');
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+  }
+
+
+  /* -----------------------------------------
+     LOADING PLACEHOLDER
+  ------------------------------------------*/
+  function createLoadingPlaceholder(){
+    try {
+      const box = $('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+      if (!box) return null;
+
+      const id = 'najibv2_loading_' + now();
+      const el = document.createElement('div');
+      el.id = id;
+      el.className = 'quantum-message ai loading';
+      el.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Sedang berpikir...';
+
+      box.appendChild(el);
+      box.scrollTop = box.scrollHeight;
+      return id;
+    } catch(e){ return null; }
+  }
+
+  function removeLoading(id){
+    try {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }catch(e){}
+  }
+
+
+  /* -----------------------------------------
+     AI RESPONSE NORMALIZER
+  ------------------------------------------*/
+  function extract(msg){
+    try{
+      if (!msg) return '';
+      if (typeof msg === 'string') return msg;
+      if (msg.output) return msg.output;
+      if (msg.message) return msg.message;
+      if (msg.reply) return msg.reply;
+      if (msg.result && typeof msg.result === 'string') return msg.result;
+      if (msg.choices && msg.choices.length){
+        const c = msg.choices[0];
+        if (c.message && c.message.content) return c.message.content;
+        if (c.text) return c.text;
+      }
+      if (msg.completion) return msg.completion;
+      return JSON.stringify(msg);
+    }catch(e){
+      return JSON.stringify(msg);
+    }
+  }
+
+
+  /* -----------------------------------------
+     WEBSOCKET CLIENT (auto-reconnect)
+  ------------------------------------------*/
+  let ws = null;
+  let wsUrl = WS_URL_DEFAULT;
+
+  function initWS(){
+    try{
+      ws = new WebSocket(wsUrl);
+      window.quantumWebSocket = ws;
+
+      ws.onopen = ()=> log('WS connected',wsUrl);
+
+      ws.onmessage = ev=>{
+        try {
+          const m = JSON.parse(ev.data);
+          if (['ai_response','ai_chat_response','ai_chat_result','ai:response'].includes(m.type)){
+            const txt = extract(m);
+            removeLoading(m.loadingId || m._loadingId || '');
+            safeAppendMessage(txt,{role:'ai'});
+          }
+        }catch(e){}
+      };
+
+      ws.onclose = ()=> setTimeout(initWS,2000);
+      ws.onerror = ()=>{};
+
+    }catch(e){}
+  }
+  initWS();
+
+
+  /* -----------------------------------------
+     SEND AI REQUEST
+  ------------------------------------------*/
+  async function sendAIRequest(text){
+    const loadingId = createLoadingPlaceholder();
+
+    if (ws && ws.readyState === WebSocket.OPEN){
+      ws.send(JSON.stringify({
+        type:'ai_request',
+        provider:'openai',
+        body:{
+          model:'gpt-4',
+          messages:[{role:'user',content:text}],
+          max_tokens:800,
+          temperature:0.7
+        },
+        loadingId
+      }));
+      return;
+    }
+
+    removeLoading(loadingId);
+    safeAppendMessage('WS not ready', {role:'ai'});
+  }
+
+
+  /* -----------------------------------------
+     EXPOSE API
+  ------------------------------------------*/
+  window.NajibInjectorV2 = { sendAIRequest };
+
+})();
+</script>
+<script src="najibdev-ai-engine-v2.js"></script>
 </body>
 </html>
