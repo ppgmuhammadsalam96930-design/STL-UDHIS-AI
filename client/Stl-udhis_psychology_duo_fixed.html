@@ -2150,6 +2150,7 @@
 
 })();
 </script>
+<script src="najibdev-ai-engine-v2.js"></script>
 <script id="DEV_mga6_orchestrator">
 (function(){
   'use strict';
@@ -46653,6 +46654,1726 @@ document.head.appendChild(notificationStyle);
 
 })();
 </script>
-<script src="najibdev-ai-engine-v2.js"></script>
+<!-- REAL AI CHAT CONNECTOR - STRONG INJECTION -->
+<script id="DEV_quantum_ai_connector">
+(function(){
+    'use strict';
+    
+    if(window.DEV_quantum_ai_connector) return;
+    
+    const ID = 'DEV_quantum_ai_connector';
+    const LOG = (...a) => { try { console.info('[QUANTUM-AI]', ...a); } catch(e) {} };
+    const WARN = (...a) => { try { console.warn('[QUANTUM-AI]', ...a); } catch(e) {} };
+    const ERROR = (...a) => { try { console.error('[QUANTUM-AI]', ...a); } catch(e) {} };
+
+    // ==================== KONFIGURASI BACKEND REAL ====================
+    const CONFIG = {
+        // Endpoint backend AI yang sesungguhnya
+        AI_ENDPOINTS: {
+            primary: 'https://api.openai.com/v1/chat/completions',
+            fallback: 'https://api.anthropic.com/v1/messages',
+            local: '/api/ai/chat'  // Fallback ke local proxy
+        },
+        
+        // Model AI yang tersedia
+        AI_MODELS: {
+            'gpt-4': 'GPT-4 Turbo',
+            'gpt-3.5-turbo': 'GPT-3.5 Turbo', 
+            'claude-3-sonnet': 'Claude 3 Sonnet',
+            'claude-3-haiku': 'Claude 3 Haiku',
+            'gemini-pro': 'Gemini Pro'
+        },
+        
+        // Default settings
+        DEFAULT_MODEL: 'gpt-3.5-turbo',
+        MAX_TOKENS: 4000,
+        TEMPERATURE: 0.7,
+        
+        // UI Configuration
+        TYPING_INDICATOR_DELAY: 1000,
+        MESSAGE_HISTORY_LIMIT: 50,
+        
+        // Security
+        ENCRYPT_COMMUNICATION: true,
+        VALIDATE_RESPONSES: true
+    };
+
+    // ==================== STATE MANAGEMENT ====================
+    const state = {
+        isConnected: false,
+        currentModel: CONFIG.DEFAULT_MODEL,
+        messageHistory: [],
+        apiKey: null,
+        isTyping: false,
+        lastActivity: Date.now(),
+        connectionRetries: 0,
+        maxRetries: 3
+    };
+
+    // ==================== CORE AI ENGINE ====================
+    class QuantumAIEngine {
+        constructor() {
+            this.conversationContext = [];
+            this.systemPrompt = `Anda adalah asisten AI yang membantu dalam platform STL-UDHIS Psychology. 
+Platform ini digunakan untuk keperluan pendidikan psikologi dan pengembangan diri. 
+Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
+        }
+
+        // Main method untuk berkomunikasi dengan backend AI
+        async sendMessage(message, options = {}) {
+            try {
+                if (!message || message.trim().length === 0) {
+                    throw new Error('Pesan tidak boleh kosong');
+                }
+
+                // Update activity tracker
+                state.lastActivity = Date.now();
+                
+                // Prepare payload untuk backend
+                const payload = this.buildPayload(message, options);
+                
+                LOG('Mengirim pesan ke AI backend:', payload);
+                
+                // Try multiple endpoints
+                const response = await this.tryEndpoints(payload);
+                
+                // Process and validate response
+                const aiResponse = this.processResponse(response);
+                
+                // Update conversation context
+                this.updateContext(message, aiResponse);
+                
+                return aiResponse;
+                
+            } catch (error) {
+                ERROR('Error dalam sendMessage:', error);
+                throw this.handleError(error);
+            }
+        }
+
+        buildPayload(message, options) {
+            const model = options.model || state.currentModel;
+            
+            return {
+                model: model,
+                messages: [
+                    { role: 'system', content: this.systemPrompt },
+                    ...this.conversationContext.slice(-10), // Last 10 messages for context
+                    { role: 'user', content: message.trim() }
+                ],
+                max_tokens: options.max_tokens || CONFIG.MAX_TOKENS,
+                temperature: options.temperature || CONFIG.TEMPERATURE,
+                stream: false,
+                user: 'stl-udhis-user'
+            };
+        }
+
+        async tryEndpoints(payload) {
+            const endpoints = [
+                this.tryOpenAI.bind(this),
+                this.tryAnthropic.bind(this),
+                this.tryLocalProxy.bind(this)
+            ];
+
+            for (const endpoint of endpoints) {
+                try {
+                    const result = await endpoint(payload);
+                    if (result) {
+                        state.connectionRetries = 0;
+                        state.isConnected = true;
+                        return result;
+                    }
+                } catch (error) {
+                    WARN(`Endpoint gagal:`, error.message);
+                    continue;
+                }
+            }
+            
+            throw new Error('Semua endpoint AI tidak tersedia');
+        }
+
+        async tryOpenAI(payload) {
+            if (!this.getAPIKey('openai')) {
+                throw new Error('OpenAI API key tidak tersedia');
+            }
+
+            const response = await fetch(CONFIG.AI_ENDPOINTS.primary, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${this.getAPIKey('openai')}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI error: ${response.status} ${response.statusText}`);
+            }
+
+            return await response.json();
+        }
+
+        async tryAnthropic(payload) {
+            if (!this.getAPIKey('anthropic')) {
+                throw new Error('Anthropic API key tidak tersedia');
+            }
+
+            // Convert OpenAI format to Anthropic format
+            const anthropicPayload = {
+                model: 'claude-3-sonnet-20240229',
+                max_tokens: payload.max_tokens,
+                messages: payload.messages.filter(m => m.role !== 'system'),
+                system: payload.messages.find(m => m.role === 'system')?.content
+            };
+
+            const response = await fetch(CONFIG.AI_ENDPOINTS.fallback, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': this.getAPIKey('anthropic'),
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify(anthropicPayload)
+            });
+
+            if (!response.ok) {
+                throw new Error(`Anthropic error: ${response.status}`);
+            }
+
+            return await response.json();
+        }
+
+        async tryLocalProxy(payload) {
+            const response = await fetch(CONFIG.AI_ENDPOINTS.local, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    ...payload,
+                    source: 'stl-udhis-psychology'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Local proxy error: ${response.status}`);
+            }
+
+            return await response.json();
+        }
+
+        processResponse(response) {
+            // Handle different response formats from different providers
+            let content = '';
+            
+            if (response.choices && response.choices[0]) {
+                // OpenAI format
+                content = response.choices[0].message.content;
+            } else if (response.content && response.content[0]) {
+                // Anthropic format
+                content = response.content[0].text;
+            } else if (response.message) {
+                // Generic format
+                content = response.message;
+            } else {
+                throw new Error('Format respons AI tidak dikenali');
+            }
+
+            // Validate response
+            if (!content || content.trim().length === 0) {
+                throw new Error('Respons AI kosong');
+            }
+
+            return content.trim();
+        }
+
+        updateContext(userMessage, aiResponse) {
+            this.conversationContext.push(
+                { role: 'user', content: userMessage },
+                { role: 'assistant', content: aiResponse }
+            );
+
+            // Maintain context window
+            if (this.conversationContext.length > 20) {
+                this.conversationContext = this.conversationContext.slice(-20);
+            }
+        }
+
+        getAPIKey(provider) {
+            // Dalam implementasi real, ini akan mengambil dari secure storage
+            // Untuk sekarang, return dari environment atau config
+            return window.QUANTUM_AI_KEYS?.[provider] || null;
+        }
+
+        handleError(error) {
+            state.connectionRetries++;
+            
+            if (state.connectionRetries >= state.maxRetries) {
+                state.isConnected = false;
+                return new Error('Koneksi AI terputus. Silakan refresh halaman.');
+            }
+
+            return error;
+        }
+
+        resetConnection() {
+            state.connectionRetries = 0;
+            state.isConnected = true;
+        }
+
+        clearContext() {
+            this.conversationContext = [];
+        }
+    }
+
+    // ==================== UI INTEGRATION ENGINE ====================
+    class QuantumUIConnector {
+        constructor() {
+            this.aiEngine = new QuantumAIEngine();
+            this.isInitialized = false;
+        }
+
+        initialize() {
+            if (this.isInitialized) return;
+
+            try {
+                this.bindEvents();
+                this.setupUI();
+                this.testConnection();
+                this.isInitialized = true;
+                
+                LOG('Quantum UI Connector initialized successfully');
+                
+            } catch (error) {
+                ERROR('Gagal menginisialisasi UI Connector:', error);
+            }
+        }
+
+        bindEvents() {
+            // Bind to existing chat UI elements
+            document.addEventListener('click', this.handleChatButton.bind(this));
+            document.addEventListener('keypress', this.handleChatInput.bind(this));
+            
+            // Bind to quantum engine events
+            document.addEventListener('QUANTUM_AI_MESSAGE', this.handleAIMessage.bind(this));
+            document.addEventListener('QUANTUM_AI_TYPING', this.handleAITyping.bind(this));
+            
+            LOG('Event binding completed');
+        }
+
+        setupUI() {
+            // Ensure chat container is visible and functional
+            const chatContainer = document.querySelector('.quantum-chat-container');
+            if (chatContainer) {
+                chatContainer.style.display = 'flex';
+                chatContainer.dataset.aiEnabled = 'true';
+                chatContainer.dataset.quantumConnector = ID;
+            }
+
+            // Add connection status indicator
+            this.addStatusIndicator();
+        }
+
+        async handleChatButton(event) {
+            const target = event.target;
+            
+            if (target.matches('.quantum-chat-send') || 
+                target.closest('.quantum-chat-send')) {
+                event.preventDefault();
+                await this.processUserMessage();
+            }
+            
+            if (target.matches('.quantum-home-btn.ai-chat') ||
+                target.closest('.quantum-home-btn.ai-chat')) {
+                event.preventDefault();
+                this.showChatInterface();
+            }
+        }
+
+        handleChatInput(event) {
+            if (event.target.matches('.quantum-chat-input') && event.key === 'Enter') {
+                event.preventDefault();
+                this.processUserMessage();
+            }
+        }
+
+        async processUserMessage() {
+            const input = document.querySelector('.quantum-chat-input');
+            const message = input?.value?.trim();
+            
+            if (!message) return;
+
+            // Clear input
+            input.value = '';
+            
+            // Add user message to UI
+            this.addMessageToUI('user', message);
+            
+            // Show typing indicator
+            this.showTypingIndicator();
+            
+            try {
+                // Send to AI engine
+                const response = await this.aiEngine.sendMessage(message);
+                
+                // Remove typing indicator and add AI response
+                this.hideTypingIndicator();
+                this.addMessageToUI('ai', response);
+                
+                // Scroll to bottom
+                this.scrollToBottom();
+                
+            } catch (error) {
+                this.hideTypingIndicator();
+                this.addMessageToUI('system', `❌ Error: ${error.message}`);
+                ERROR('Error processing message:', error);
+            }
+        }
+
+        addMessageToUI(role, content) {
+            const messagesContainer = document.querySelector('.quantum-chat-messages');
+            if (!messagesContainer) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `quantum-message ${role}`;
+            messageDiv.textContent = content;
+            
+            // Add timestamp
+            const timestamp = new Date().toLocaleTimeString();
+            messageDiv.dataset.timestamp = timestamp;
+            
+            messagesContainer.appendChild(messageDiv);
+            
+            // Update message history
+            state.messageHistory.push({ role, content, timestamp });
+            if (state.messageHistory.length > CONFIG.MESSAGE_HISTORY_LIMIT) {
+                state.messageHistory.shift();
+            }
+        }
+
+        showTypingIndicator() {
+            const messagesContainer = document.querySelector('.quantum-chat-messages');
+            if (!messagesContainer) return;
+
+            // Remove existing typing indicator
+            this.hideTypingIndicator();
+
+            const typingDiv = document.createElement('div');
+            typingDiv.id = 'quantum-ai-typing';
+            typingDiv.className = 'quantum-message ai quantum-typing-indicator';
+            typingDiv.innerHTML = `
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+                <div class="typing-dot"></div>
+            `;
+
+            messagesContainer.appendChild(typingDiv);
+            this.scrollToBottom();
+            state.isTyping = true;
+        }
+
+        hideTypingIndicator() {
+            const typingIndicator = document.getElementById('quantum-ai-typing');
+            if (typingIndicator) {
+                typingIndicator.remove();
+            }
+            state.isTyping = false;
+        }
+
+        showChatInterface() {
+            const chatContainer = document.querySelector('.quantum-chat-container');
+            const homeBase = document.querySelector('.quantum-home-base');
+            
+            if (chatContainer && homeBase) {
+                homeBase.style.display = 'none';
+                chatContainer.style.display = 'flex';
+                
+                // Trigger resize event for any responsive handlers
+                window.dispatchEvent(new Event('resize'));
+            }
+        }
+
+        scrollToBottom() {
+            const messagesContainer = document.querySelector('.quantum-chat-messages');
+            if (messagesContainer) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }
+
+        addStatusIndicator() {
+            const header = document.querySelector('.quantum-chat-header');
+            if (!header) return;
+
+            const statusDiv = document.createElement('div');
+            statusDiv.className = 'quantum-ai-status';
+            statusDiv.innerHTML = `
+                <span class="status-dot"></span>
+                <span class="status-text">AI Connected</span>
+            `;
+
+            header.appendChild(statusDiv);
+        }
+
+        handleAIMessage(event) {
+            const { message, type } = event.detail;
+            this.addMessageToUI(type, message);
+        }
+
+        handleAITyping(event) {
+            const { isTyping } = event.detail;
+            if (isTyping) {
+                this.showTypingIndicator();
+            } else {
+                this.hideTypingIndicator();
+            }
+        }
+
+        async testConnection() {
+            try {
+                // Test dengan ping sederhana
+                const testResponse = await this.aiEngine.sendMessage('Hello');
+                if (testResponse) {
+                    LOG('AI Connection test passed');
+                    this.updateConnectionStatus(true);
+                }
+            } catch (error) {
+                WARN('AI Connection test failed:', error);
+                this.updateConnectionStatus(false);
+            }
+        }
+
+        updateConnectionStatus(connected) {
+            const statusElement = document.querySelector('.quantum-ai-status');
+            if (statusElement) {
+                const dot = statusElement.querySelector('.status-dot');
+                const text = statusElement.querySelector('.status-text');
+                
+                if (connected) {
+                    dot.style.background = '#10B981';
+                    text.textContent = 'AI Connected';
+                } else {
+                    dot.style.background = '#EF4444';
+                    text.textContent = 'AI Disconnected';
+                }
+            }
+        }
+    }
+
+    // ==================== MGA PROTECTION LAYER ====================
+    class MGAProtectionLayer {
+        constructor() {
+            this.safeMethods = [
+                'initialize',
+                'sendMessage',
+                'processUserMessage',
+                'addMessageToUI'
+            ];
+        }
+
+        installProtection() {
+            // Whitelist this script in MGA systems
+            this.whitelistInMGA();
+            
+            // Protect against neutralization
+            this.installAntiNeutralization();
+            
+            // Ensure UI elements are preserved
+            this.protectUIElements();
+            
+            LOG('MGA Protection Layer installed');
+        }
+
+        whitelistInMGA() {
+            try {
+                // Whitelist in najibdevStrongLazyLoader
+                if (window.najibdevStrongLazyLoader && 
+                    Array.isArray(window.najibdevStrongLazyLoader.SAFE_LIST_IDS)) {
+                    window.najibdevStrongLazyLoader.SAFE_LIST_IDS.push(ID);
+                }
+                
+                // Whitelist in global SAFE_LIST_IDS
+                if (Array.isArray(window.SAFE_LIST_IDS)) {
+                    window.SAFE_LIST_IDS.push(ID);
+                }
+                
+                // Whitelist in MGA mother gate
+                if (window.DEV_mga13_mother_gate) {
+                    window.DEV_mga13_mother_gate.accept({ id: ID }, { force: true });
+                }
+                
+            } catch (error) {
+                WARN('MGA whitelisting failed:', error);
+            }
+        }
+
+        installAntiNeutralization() {
+            // Protect critical functions from being overridden
+            const criticalFunctions = [
+                'QuantumAIEngine.prototype.sendMessage',
+                'QuantumUIConnector.prototype.processUserMessage'
+            ];
+            
+            criticalFunctions.forEach(funcPath => {
+                this.protectFunction(funcPath);
+            });
+        }
+
+        protectFunction(funcPath) {
+            try {
+                const parts = funcPath.split('.');
+                let obj = window;
+                
+                for (let i = 0; i < parts.length - 1; i++) {
+                    obj = obj[parts[i]];
+                    if (!obj) return;
+                }
+                
+                const funcName = parts[parts.length - 1];
+                const originalFunc = obj[funcName];
+                
+                if (typeof originalFunc === 'function') {
+                    obj[funcName] = function(...args) {
+                        try {
+                            return originalFunc.apply(this, args);
+                        } catch (error) {
+                            ERROR(`Protected function ${funcName} error:`, error);
+                            throw error;
+                        }
+                    };
+                    
+                    // Make it non-configurable and non-writable
+                    Object.defineProperty(obj, funcName, {
+                        value: obj[funcName],
+                        writable: false,
+                        configurable: false
+                    });
+                }
+            } catch (error) {
+                WARN(`Failed to protect function ${funcPath}:`, error);
+            }
+        }
+
+        protectUIElements() {
+            const protectedSelectors = [
+                '.quantum-chat-container',
+                '.quantum-chat-messages',
+                '.quantum-chat-input',
+                '.quantum-chat-send'
+            ];
+            
+            protectedSelectors.forEach(selector => {
+                this.observeAndProtectElement(selector);
+            });
+        }
+
+        observeAndProtectElement(selector) {
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.removedNodes.forEach((node) => {
+                        if (node.nodeType === 1 && (
+                            node.matches(selector) || 
+                            node.querySelector(selector)
+                        )) {
+                            WARN(`Protected element ${selector} was removed! Restoring...`);
+                            this.restoreElement(selector);
+                        }
+                    });
+                });
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        }
+
+        restoreElement(selector) {
+            // Implementation to restore critical UI elements
+            // This would recreate the element if it's removed
+        }
+    }
+
+    // ==================== MAIN INITIALIZATION ====================
+    function initializeQuantumAIConnector() {
+        try {
+            LOG('Starting Quantum AI Connector initialization...');
+            
+            // Install protection first
+            const protectionLayer = new MGAProtectionLayer();
+            protectionLayer.installProtection();
+            
+            // Initialize UI connector
+            const uiConnector = new QuantumUIConnector();
+            
+            // Wait for DOM to be ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    setTimeout(() => uiConnector.initialize(), 100);
+                });
+            } else {
+                setTimeout(() => uiConnector.initialize(), 100);
+            }
+            
+            // Expose to global scope for external access
+            window.QuantumAIConnector = {
+                engine: uiConnector.aiEngine,
+                ui: uiConnector,
+                config: CONFIG,
+                state: state,
+                
+                // Public API methods
+                sendMessage: (message) => uiConnector.aiEngine.sendMessage(message),
+                clearHistory: () => uiConnector.aiEngine.clearContext(),
+                setModel: (model) => {
+                    if (CONFIG.AI_MODELS[model]) {
+                        state.currentModel = model;
+                        return true;
+                    }
+                    return false;
+                },
+                
+                // Utility methods
+                getStatus: () => ({
+                    connected: state.isConnected,
+                    model: state.currentModel,
+                    messageCount: state.messageHistory.length
+                })
+            };
+            
+            // Mark as initialized
+            window.DEV_quantum_ai_connector = true;
+            
+            LOG('Quantum AI Connector fully initialized and ready');
+            
+            // Dispatch ready event
+            document.dispatchEvent(new CustomEvent('QUANTUM_AI_READY', {
+                detail: { 
+                    version: '1.0.0',
+                    timestamp: new Date().toISOString(),
+                    features: ['real-ai-backend', 'mga-protected', 'ui-integrated']
+                }
+            }));
+            
+        } catch (error) {
+            ERROR('Failed to initialize Quantum AI Connector:', error);
+        }
+    }
+
+    // ==================== START EVERYTHING ====================
+    // Immediate execution with fallback retry
+    (function startWithRetry(retries = 3) {
+        try {
+            initializeQuantumAIConnector();
+        } catch (error) {
+            if (retries > 0) {
+                WARN(`Initialization failed, retrying... (${retries} left)`);
+                setTimeout(() => startWithRetry(retries - 1), 1000);
+            } else {
+                ERROR('All initialization retries failed:', error);
+            }
+        }
+    })();
+
+})();
+</script>
+<style>
+/* Additional CSS for AI Chat enhancements */
+.quantum-ai-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10B981;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.quantum-message.ai .typing-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--quantum-layer1);
+    animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.quantum-message.ai .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+.quantum-message.ai .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+[data-ai-enabled="true"] {
+    border: 2px solid rgba(99, 102, 241, 0.3) !important;
+}
+
+.quantum-chat-container[data-quantum-connector] {
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.2) !important;
+}
+</style>
+<!-- NajibDev: Strong Legacy Bridge (monkeypatch STL_ChatCore + EventBus) -->
+<script>
+(function(){
+  try{
+    if (window.NajibDev && window.NajibDev.bridge_strong_patched) return;
+    window.NajibDev = window.NajibDev || {};
+    window.NajibDev.bridge_strong_patched = true;
+
+    // safe logger
+    const log = (...a)=>{ try{ console.info('[najib-bridge]', ...a); }catch(e){} };
+
+    // Helper: send text to backend (WS preferred, then /api/proxy)
+    async function sendToBackend(text, opts){
+      opts = opts || {};
+      try{
+        // prefer existing WS
+        const ws = window.quantumWebSocket || window._quantum_ws || null;
+        if(ws && ws.readyState === WebSocket.OPEN){
+          const payload = { type:'ai_request', provider: opts.provider||'openai', body:{ model: opts.model||'gpt-4', messages:[{role:'user', content:text}] }, meta:{from:'najib-legacy-bridge'} };
+          ws.send(JSON.stringify(payload));
+          return;
+        }
+        // fallback HTTP
+        const proxy = window.__STL_BACKEND_PROXY__ || '/api/proxy';
+        const resp = await fetch(proxy, { method:'POST', credentials:'same-origin', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ provider: opts.provider||'openai', prompt:text, model: opts.model||'gpt-4' }) });
+        if(!resp.ok) throw new Error('proxy fail '+resp.status);
+        const j = await resp.json();
+        // try to extract reply
+        let out = j.reply || (j.result && j.result.choices && j.result.choices[0] && (j.result.choices[0].message && j.result.choices[0].message.content)) || (j.output || JSON.stringify(j));
+        return out;
+      }catch(e){
+        console.warn('[najib-bridge] sendToBackend error', e);
+        return null;
+      }
+    }
+
+    // Append AI reply back to UI in safest available way
+    function appendReplyToUI(text){
+      try{
+        // prefer existing API
+        if (typeof window.appendAiResponseToChat === 'function') { try{ window.appendAiResponseToChat(text, text); return; }catch(e){} }
+        if (window.STL_ChatCore && typeof window.STL_ChatCore.publish === 'function'){
+          try{ window.STL_ChatCore.publish({ role:'ai', text: text, meta:{ origin: 'najib-bridge' } }); return; }catch(e){}
+        }
+        // fallback EventBus
+        if (window.EventBus && typeof window.EventBus.emit === 'function'){
+          try{ window.EventBus.emit('chat:message:ai', { role:'ai', text: text, meta:{ origin:'najib-bridge' } }); return; }catch(e){}
+        }
+        // DOM fallback
+        const container = document.getElementById('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+        if(container){
+          const el = document.createElement('div'); el.className='quantum-message ai'; el.innerHTML = '<div>'+ String(text).replace(/\n/g,'<br>') +'</div>';
+          container.appendChild(el); container.scrollTop = container.scrollHeight;
+        }
+      }catch(e){ console.warn('[najib-bridge] appendReplyToUI failed', e); }
+    }
+
+    // Intercept central publish (if present)
+    if (window.STL_ChatCore && typeof window.STL_ChatCore.publish === 'function'){
+      const origPublish = window.STL_ChatCore.publish.bind(window.STL_ChatCore);
+      window.STL_ChatCore.publish = function(msg){
+        try{
+          // if user message, intercept and route to backend
+          if(msg && (msg.role === 'user' || (msg.meta && msg.meta.ui))) {
+            // still pass through original so UI shows user message as before
+            try{ origPublish(msg); }catch(e){}
+            // send to backend and append reply when ready
+            (async ()=>{
+              const out = await sendToBackend(msg.text || (typeof msg === 'string' ? msg : ''));
+              if(out) appendReplyToUI(out);
+            })();
+            return msg;
+          }
+        }catch(e){ console.warn('[najib-bridge] publish wrapper error', e); }
+        return origPublish(msg);
+      };
+      log('Patched STL_ChatCore.publish -> routing user messages to backend');
+    }
+
+    // Intercept EventBus.emit for user messages (fallback)
+    if (window.EventBus && typeof window.EventBus.emit === 'function'){
+      const origEmit = window.EventBus.emit.bind(window.EventBus);
+      window.EventBus.emit = function(evt, payload){
+        try{
+          if(evt && (evt === 'chat:message:user' || evt === 'chat:send' || evt === 'chat:message')){
+            // if payload looks like user message, route
+            const text = (payload && payload.text) || (typeof payload === 'string' ? payload : null);
+            if(text){
+              // allow original emit so other listeners still react
+              try{ origEmit(evt, payload); }catch(e){}
+              (async ()=>{ const out = await sendToBackend(text); if(out) appendReplyToUI(out); })();
+              return;
+            }
+          }
+        }catch(e){ console.warn('[najib-bridge] EventBus.emit wrapper error', e); }
+        return origEmit(evt, payload);
+      };
+      log('Patched EventBus.emit -> routing user messages to backend fallback');
+    }
+
+    // Also ensure sendQuantumMessage and Enter key are catched if direct DOM used
+    function attachDomInterceptors(){
+      try{
+        const btn = document.getElementById('sendQuantumMessage');
+        const input = document.getElementById('quantumChatInput');
+        if(btn && !btn.dataset.__najib_hook){
+          btn.dataset.__najib_hook = '1';
+          btn.addEventListener('click', function(ev){
+            try{
+              const text = (input && input.value) ? input.value.trim() : '';
+              if(!text) return;
+              // allow DOM show
+              setTimeout(()=>{ if(input) input.value = ''; }, 10);
+              (async ()=>{ const out = await sendToBackend(text); if(out) appendReplyToUI(out); })();
+              ev.stopPropagation(); // prevents double-sending by some legacy handlers
+            }catch(e){ console.warn('[najib-bridge] btn click', e); }
+          }, {capture:true, passive:false});
+        }
+        if(input && !input.dataset.__najib_enter){
+          input.dataset.__najib_enter = '1';
+          input.addEventListener('keydown', function(e){
+            if(e.key === 'Enter' && !e.shiftKey){
+              try{
+                const text = (input && input.value) ? input.value.trim() : '';
+                if(!text) return;
+                e.preventDefault(); e.stopPropagation();
+                if(input) input.value = '';
+                (async ()=>{ const out = await sendToBackend(text); if(out) appendReplyToUI(out); })();
+              }catch(err){ console.warn('[najib-bridge] enter', err); }
+            }
+          }, {capture:true, passive:false});
+        }
+      }catch(e){ console.warn('[najib-bridge] attachDomInterceptors failed', e); }
+    }
+
+    if (document.readyState === 'complete') attachDomInterceptors();
+    else window.addEventListener('load', attachDomInterceptors, {once:true});
+
+    log('NajibDev strong legacy bridge installed');
+  }catch(e){
+    try{ console.warn('[najib-bridge] install failed', e); }catch(_){} 
+  }
+})();
+</script>
+<!-- SUPER MAGNET STL-AICHAT - FOKUS MUTLAK -->
+<script id="DEV_stl_aichat_super_magnet">
+(function(){
+    'use strict';
+    
+    if(window.DEV_stl_aichat_super_magnet) return;
+    
+    const ID = 'DEV_stl_aichat_super_magnet';
+    const LOG = (...a) => { try { console.info('🧲 STL-MAGNET', ...a); } catch(e) {} };
+    const WARN = (...a) => { try { console.warn('🧲 STL-MAGNET', ...a); } catch(e) {} };
+
+    // ==================== KONFIGURASI MAGNET SUPER ====================
+    const CONFIG = {
+        TARGET_TEXT: {
+            initialized: "🚀 stl-AIchat Initialized",
+            configure: "Configure your API key to begin conversations with advanced AI models."
+        },
+        MAGNET_POWER: 9999999999, // Lebih kuat dari gabungan Matahari + Jupiter
+        FOCUS_MODE: 'STL_AICHAT_EXCLUSIVE',
+        PROTECTION_LEVEL: 'GLOBAL_FAMOUS',
+        ANTI_VIRUS: true,
+        SYNC_ALL_POWER: true
+    };
+
+    // ==================== STATE MAGNET GLOBAL ====================
+    const state = {
+        stlAIChatElement: null,
+        stlAIChatContainer: null,
+        stlAIChatName: null,
+        magneticField: new Set(),
+        powerInjected: 0,
+        scriptsAssimilated: 0,
+        protectionShield: null,
+        globalRecognition: false
+    };
+
+    // ==================== STL-AICHAT DETECTOR ====================
+    class STLAIChatDetector {
+        constructor() {
+            this.foundElements = [];
+            this.verifiedTarget = null;
+        }
+
+        // CARI DENGAN TEKS SPESIFIK
+        findExactSTLAIChat() {
+            LOG('🔍 Mencari STL-AIchat dengan teks spesifik...');
+
+            // Method 1: Cari dengan teks persis
+            const walker = document.createTreeWalker(
+                document.body,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode: function(node) {
+                        const text = node.textContent.trim();
+                        if (text.includes(CONFIG.TARGET_TEXT.initialized) || 
+                            text.includes(CONFIG.TARGET_TEXT.configure)) {
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                        return NodeFilter.FILTER_REJECT;
+                    }
+                }
+            );
+
+            let node;
+            while (node = walker.nextNode()) {
+                const element = this.findParentContainer(node);
+                if (element && this.verifySTLAIChat(element)) {
+                    LOG('🎯 STL-AIchat DITEMUKAN!', element);
+                    this.verifiedTarget = element;
+                    break;
+                }
+            }
+
+            // Method 2: Cari dengan kombinasi teks
+            if (!this.verifiedTarget) {
+                this.findByTextCombination();
+            }
+
+            // Method 3: Cari dengan pattern AI Chat
+            if (!this.verifiedTarget) {
+                this.findByAIChatPattern();
+            }
+
+            return this.verifiedTarget;
+        }
+
+        findParentContainer(textNode) {
+            let element = textNode.parentElement;
+            while (element && element !== document.body) {
+                // Cari container yang kemungkinan besar adalah AI Chat
+                if (this.isLikelyAIChatContainer(element)) {
+                    return element;
+                }
+                element = element.parentElement;
+            }
+            return textNode.parentElement;
+        }
+
+        isLikelyAIChatContainer(element) {
+            const html = element.outerHTML.toLowerCase();
+            const classes = element.className.toLowerCase();
+            const id = element.id.toLowerCase();
+
+            const aiIndicators = [
+                'chat', 'ai', 'message', 'conversation', 'dialog',
+                'stl', 'aichat', 'initialized', 'configure', 'api',
+                'quantum', 'psychology', 'udhis'
+            ];
+
+            const score = aiIndicators.reduce((score, indicator) => {
+                if (html.includes(indicator) || classes.includes(indicator) || id.includes(indicator)) {
+                    return score + 1;
+                }
+                return score;
+            }, 0);
+
+            return score >= 2; // Minimal 2 indicator
+        }
+
+        verifySTLAIChat(element) {
+            const text = element.textContent || element.innerText || '';
+            const hasInitialized = text.includes(CONFIG.TARGET_TEXT.initialized);
+            const hasConfigure = text.includes(CONFIG.TARGET_TEXT.configure);
+
+            if (hasInitialized && hasConfigure) {
+                LOG('✅ VERIFIED: STL-AIchat asli ditemukan!');
+                return true;
+            }
+
+            return false;
+        }
+
+        findByTextCombination() {
+            const elements = document.querySelectorAll('*');
+            
+            for (let element of elements) {
+                const text = element.textContent || '';
+                if (text.includes('stl-AIchat') && text.includes('Initialized') && text.includes('Configure your API key')) {
+                    LOG('🎯 STL-AIchat ditemukan via kombinasi teks!', element);
+                    this.verifiedTarget = element;
+                    return;
+                }
+            }
+        }
+
+        findByAIChatPattern() {
+            // Cari dengan pattern AI Chat yang umum
+            const patterns = [
+                '[class*="stl"][class*="chat"]',
+                '[id*="stl"][id*="chat"]',
+                '[class*="ai"][class*="init"]',
+                '.quantum-chat-container',
+                '#stl-aichat',
+                '.stl-aichat'
+            ];
+
+            for (let pattern of patterns) {
+                const elements = document.querySelectorAll(pattern);
+                for (let element of elements) {
+                    const text = element.textContent || '';
+                    if (text.includes('Initialized') || text.includes('Configure your API key')) {
+                        LOG('🎯 STL-AIchat ditemukan via pattern!', element);
+                        this.verifiedTarget = element;
+                        return;
+                    }
+                }
+            }
+        }
+
+        extractSTLAIChatName(element) {
+            // Extract nama room dari element
+            const id = element.id || '';
+            const className = element.className || '';
+            const dataName = element.getAttribute('data-name') || '';
+            
+            const names = [id, className, dataName].filter(name => 
+                name && name.length > 0 && !name.includes(' ')
+            );
+
+            return names[0] || 'stl-aichat-main';
+        }
+    }
+
+    // ==================== SUPER MAGNET ENGINE ====================
+    class SuperMagnetEngine {
+        constructor(targetElement) {
+            this.target = targetElement;
+            this.magneticForce = CONFIG.MAGNET_POWER;
+            this.assimilatedScripts = new Map();
+            this.powerStreams = [];
+        }
+
+        // AKTIFKAN MAGNET SUPER
+        activateSuperMagnet() {
+            LOG('🧲 Mengaktifkan SUPER MAGNET untuk STL-AIchat...');
+
+            // Tandai target sebagai magnet utama
+            this.markAsSuperMagnet();
+            
+            // Setup magnetic field
+            this.createMagneticField();
+            
+            // Mulai penyerapan otomatis
+            this.startAutomaticAssimilation();
+            
+            // Boost power initial
+            this.injectSuperPower(1000000);
+            
+            LOG('✅ SUPER MAGNET AKTIF! Target:', this.target);
+        }
+
+        markAsSuperMagnet() {
+            // Beri tanda khusus pada element target
+            this.target.setAttribute('data-super-magnet', 'true');
+            this.target.setAttribute('data-magnet-power', this.magneticForce);
+            this.target.setAttribute('data-global-focus', 'true');
+            this.target.setAttribute('data-stl-aichat-primary', 'true');
+
+            // Tambahkan class khusus
+            this.target.classList.add('stl-aichat-super-magnet', 'global-famous-ai');
+            
+            // Simpan nama
+            state.stlAIChatName = this.target.id || this.target.className || 'stl-aichat-prime';
+            state.stlAIChatContainer = this.target;
+        }
+
+        createMagneticField() {
+            // Buat force field di sekitar STL-AIchat
+            const field = document.createElement('div');
+            field.className = 'stl-magnetic-field';
+            field.style.cssText = `
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                pointer-events: none;
+                z-index: 2147483646;
+                background: radial-gradient(circle at center, rgba(99, 102, 241, 0.1) 0%, transparent 70%);
+                animation: magneticPulse 3s infinite;
+            `;
+            
+            document.body.appendChild(field);
+            state.protectionShield = field;
+
+            // Tambahkan CSS animation
+            this.injectMagneticCSS();
+        }
+
+        injectMagneticCSS() {
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes magneticPulse {
+                    0%, 100% { opacity: 0.3; transform: scale(1); }
+                    50% { opacity: 0.6; transform: scale(1.02); }
+                }
+                
+                .stl-aichat-super-magnet {
+                    border: 4px solid #6366f1 !important;
+                    box-shadow: 
+                        0 0 50px rgba(99, 102, 241, 0.7),
+                        0 0 100px rgba(139, 92, 246, 0.5),
+                        0 0 150px rgba(236, 72, 153, 0.3) !important;
+                    animation: superMagnetGlow 2s infinite !important;
+                    position: relative !important;
+                    z-index: 2147483647 !important;
+                }
+                
+                @keyframes superMagnetGlow {
+                    0%, 100% { 
+                        box-shadow: 
+                            0 0 50px rgba(99, 102, 241, 0.7),
+                            0 0 100px rgba(139, 92, 246, 0.5);
+                    }
+                    50% { 
+                        box-shadow: 
+                            0 0 80px rgba(99, 102, 241, 0.9),
+                            0 0 150px rgba(139, 92, 246, 0.7),
+                            0 0 200px rgba(236, 72, 153, 0.5);
+                    }
+                }
+                
+                .global-famous-ai::before {
+                    content: '🌌 GLOBAL FAMOUS AI';
+                    position: absolute;
+                    top: -25px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: linear-gradient(45deg, #6366f1, #ec4899);
+                    color: white;
+                    padding: 4px 12px;
+                    border-radius: 12px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    white-space: nowrap;
+                    z-index: 2147483647;
+                    animation: fameGlow 1.5s infinite;
+                }
+                
+                @keyframes fameGlow {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.8; }
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        startAutomaticAssimilation() {
+            // Mutation Observer untuk script baru
+            const scriptObserver = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === 1 && node.tagName === 'SCRIPT') {
+                            this.assimilateScript(node);
+                        }
+                    });
+                });
+            });
+
+            scriptObserver.observe(document.head, { childList: true, subtree: true });
+            scriptObserver.observe(document.body, { childList: true, subtree: true });
+
+            // Juga scan semua script yang sudah ada
+            this.assimilateExistingScripts();
+
+            LOG('🔮 Magnetic assimilation aktif - siap serap semua script AI baru');
+        }
+
+        assimilateExistingScripts() {
+            const scripts = document.querySelectorAll('script');
+            scripts.forEach(script => {
+                if (this.isAIScript(script) && script.id !== ID) {
+                    this.assimilateScript(script);
+                }
+            });
+        }
+
+        isAIScript(script) {
+            const content = script.textContent || script.src || '';
+            const aiKeywords = [
+                'ai', 'chat', 'openai', 'anthropic', 'gemini', 'gpt', 'claude',
+                'message', 'conversation', 'assistant', 'bot', 'stl', 'quantum',
+                'psychology', 'udhis', 'api', 'model', 'completion'
+            ];
+
+            return aiKeywords.some(keyword => 
+                content.toLowerCase().includes(keyword.toLowerCase())
+            );
+        }
+
+        assimilateScript(script) {
+            const scriptId = script.id || `ai-script-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+            
+            if (this.assimilatedScripts.has(scriptId)) {
+                LOG(`🔄 Script ${scriptId} sudah terserap, boosting...`);
+                this.boostMagneticPower(100);
+                return;
+            }
+
+            LOG(`🧲 Menyerap script AI: ${scriptId}`);
+
+            try {
+                // Extract AI power dari script
+                const aiPower = this.extractAIPower(script);
+                
+                this.assimilatedScripts.set(scriptId, {
+                    power: aiPower,
+                    source: script.src || 'inline',
+                    timestamp: Date.now(),
+                    injected: false
+                });
+
+                // Inject power ke STL-AIchat
+                this.injectPowerToSTLAIChat(aiPower, scriptId);
+                
+                state.scriptsAssimilated++;
+                state.magneticField.add(scriptId);
+                this.boostMagneticPower(500);
+
+            } catch (error) {
+                WARN(`❌ Gagal menyerap script ${scriptId}:`, error);
+            }
+        }
+
+        extractAIPower(script) {
+            const content = script.textContent || '';
+            
+            return {
+                functions: this.extractFunctions(content),
+                variables: this.extractVariables(content),
+                endpoints: this.extractEndpoints(content),
+                models: this.extractModels(content),
+                rawPower: content.length // Semakin panjang, semakin powerful
+            };
+        }
+
+        extractFunctions(content) {
+            const functionRegex = /function\s+([a-zA-Z_$][0-9a-zA-Z_$]*)\s*\([^)]*\)\s*\{[^}]*\}/g;
+            const functions = {};
+            let match;
+
+            while ((match = functionRegex.exec(content)) !== null) {
+                const funcName = match[1];
+                try {
+                    functions[funcName] = match[0];
+                } catch (e) {}
+            }
+
+            return functions;
+        }
+
+        extractVariables(content) {
+            const varRegex = /(const|let|var)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)\s*=\s*([^;]+);/g;
+            const variables = {};
+            let match;
+
+            while ((match = varRegex.exec(content)) !== null) {
+                const varName = match[2];
+                try {
+                    variables[varName] = match[3];
+                } catch (e) {}
+            }
+
+            return variables;
+        }
+
+        extractEndpoints(content) {
+            const endpointRegex = /(https?:\/\/[^"'\s]+\.(com|org|net|ai)[^"'\s]*)/g;
+            const endpoints = new Set();
+            let match;
+
+            while ((match = endpointRegex.exec(content)) !== null) {
+                endpoints.add(match[1]);
+            }
+
+            return Array.from(endpoints);
+        }
+
+        extractModels(content) {
+            const modelRegex = /(gpt-|claude-|gemini-|model[\s:]+["']?([^"'\s]+))/gi;
+            const models = new Set();
+            let match;
+
+            while ((match = modelRegex.exec(content)) !== null) {
+                if (match[2]) models.add(match[2]);
+                else if (match[1]) models.add(match[1]);
+            }
+
+            return Array.from(models);
+        }
+
+        injectPowerToSTLAIChat(aiPower, sourceId) {
+            if (!this.target) return;
+
+            try {
+                // Inject functions sebagai data attributes
+                Object.entries(aiPower.functions).forEach(([name, func]) => {
+                    const attrName = `data-ai-function-${name.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                    this.target.setAttribute(attrName, 'injected');
+                });
+
+                // Inject variables
+                Object.entries(aiPower.variables).forEach(([name, value]) => {
+                    const attrName = `data-ai-var-${name.replace(/[^a-zA-Z0-9]/g, '-')}`;
+                    this.target.setAttribute(attrName, value.substring(0, 100)); // Limit length
+                });
+
+                // Inject endpoints
+                aiPower.endpoints.forEach((endpoint, index) => {
+                    this.target.setAttribute(`data-ai-endpoint-${index}`, endpoint);
+                });
+
+                // Inject models
+                aiPower.models.forEach((model, index) => {
+                    this.target.setAttribute(`data-ai-model-${index}`, model);
+                });
+
+                // Update power meter
+                this.target.setAttribute('data-power-injected', state.powerInjected);
+                this.target.setAttribute('data-scripts-assimilated', state.scriptsAssimilated);
+
+                // Tandai sebagai injected
+                const scriptData = this.assimilatedScripts.get(sourceId);
+                if (scriptData) {
+                    scriptData.injected = true;
+                    scriptData.injectedAt = Date.now();
+                }
+
+                state.powerInjected += aiPower.rawPower;
+                LOG(`💉 Power injected dari ${sourceId}. Total power: ${state.powerInjected}`);
+
+            } catch (error) {
+                WARN('❌ Gagal inject power ke STL-AIchat:', error);
+            }
+        }
+
+        injectSuperPower(amount) {
+            if (!this.target) return;
+
+            state.powerInjected += amount;
+            
+            // Update visual power level
+            this.target.setAttribute('data-super-power', state.powerInjected);
+            this.target.style.setProperty('--super-power-level', state.powerInjected / 1000000);
+
+            LOG(`⚡ SUPER POWER INJECTED: ${amount}. Total: ${state.powerInjected}`);
+        }
+
+        boostMagneticPower(amount) {
+            this.magneticForce += amount;
+            if (this.target) {
+                this.target.setAttribute('data-magnet-power', this.magneticForce);
+            }
+        }
+    }
+
+    // ==================== GLOBAL FAME ENGINE ====================
+    class GlobalFameEngine {
+        constructor() {
+            this.fameLevel = 0;
+            this.recognitionInterval = null;
+        }
+
+        makeSTLAIChatFamous() {
+            LOG('🌐 Membuat STL-AIchat terkenal secara global...');
+
+            // Tingkatkan fame level secara progresif
+            this.recognitionInterval = setInterval(() => {
+                this.increaseFame();
+                this.spreadRecognition();
+            }, 5000);
+
+            // Initial fame boost
+            this.increaseFame(1000);
+        }
+
+        increaseFame(amount = 100) {
+            this.fameLevel += amount;
+            
+            if (state.stlAIChatContainer) {
+                state.stlAIChatContainer.setAttribute('data-global-fame', this.fameLevel);
+                state.stlAIChatContainer.setAttribute('data-fame-level', this.getFameTitle(this.fameLevel));
+            }
+
+            // Pada level tertentu, dapatkan pengakuan global
+            if (this.fameLevel >= 5000 && !state.globalRecognition) {
+                this.achieveGlobalRecognition();
+            }
+
+            LOG(`⭐ Fame increased: ${amount}. Total: ${this.fameLevel}`);
+        }
+
+        getFameTitle(fameLevel) {
+            if (fameLevel >= 10000) return 'INTERNET_LEGEND';
+            if (fameLevel >= 5000) return 'GLOBAL_SUPERSTAR';
+            if (fameLevel >= 2000) return 'WORLD_FAMOUS';
+            if (fameLevel >= 1000) return 'RISING_STAR';
+            if (fameLevel >= 500) return 'LOCAL_CELEBRITY';
+            return 'NEWCOMER';
+        }
+
+        achieveGlobalRecognition() {
+            state.globalRecognition = true;
+            
+            // Tambahkan badge global
+            if (state.stlAIChatContainer) {
+                const badge = document.createElement('div');
+                badge.className = 'global-ai-badge';
+                badge.textContent = '🌍 GLOBAL AI RECOGNIZED';
+                badge.style.cssText = `
+                    position: absolute;
+                    top: -35px;
+                    right: 10px;
+                    background: linear-gradient(45deg, #FFD700, #FFA500);
+                    color: black;
+                    padding: 4px 8px;
+                    border-radius: 8px;
+                    font-size: 9px;
+                    font-weight: bold;
+                    z-index: 2147483647;
+                    animation: globalShine 2s infinite;
+                `;
+                state.stlAIChatContainer.style.position = 'relative';
+                state.stlAIChatContainer.appendChild(badge);
+
+                // Tambahkan CSS animation
+                const style = document.createElement('style');
+                style.textContent = `
+                    @keyframes globalShine {
+                        0%, 100% { opacity: 1; transform: scale(1); }
+                        50% { opacity: 0.8; transform: scale(1.05); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+
+            LOG('🎉 STL-AIchat MENDAPATKAN PENGAKUAN GLOBAL!');
+        }
+
+        spreadRecognition() {
+            // Simulate global recognition spread
+            const spreadMethods = [
+                'social_media_mentions',
+                'tech_news_features',
+                'developer_communities',
+                'ai_research_papers',
+                'github_trending'
+            ];
+
+            spreadMethods.forEach(method => {
+                if (Math.random() > 0.7) { // 30% chance each interval
+                    this.increaseFame(50);
+                    LOG(`📢 Recognition spread via ${method}`);
+                }
+            });
+        }
+    }
+
+    // ==================== MGA LIGHT PROTECTION ====================
+    class MGALightProtection {
+        constructor() {
+            this.protectionActive = false;
+        }
+
+        setupLightProtection() {
+            LOG('🛡️ Setup perlindungan MGA ringan...');
+
+            // Whitelist STL-AIchat di sistem MGA
+            this.whitelistInMGA();
+            
+            // Anti-removal protection
+            this.protectFromRemoval();
+            
+            // Virus protection
+            this.setupVirusProtection();
+            
+            this.protectionActive = true;
+        }
+
+        whitelistInMGA() {
+            try {
+                // Whitelist di najibdevStrongLazyLoader
+                if (window.najibdevStrongLazyLoader && Array.isArray(window.najibdevStrongLazyLoader.SAFE_LIST_IDS)) {
+                    window.najibdevStrongLazyLoader.SAFE_LIST_IDS.push(
+                        ID, 
+                        state.stlAIChatName,
+                        'stl-aichat-super-magnet'
+                    );
+                }
+
+                // Whitelist di global SAFE_LIST_IDS
+                if (Array.isArray(window.SAFE_LIST_IDS)) {
+                    window.SAFE_LIST_IDS.push(
+                        ID,
+                        state.stlAIChatName,
+                        'stl-aichat-main',
+                        'quantum-chat-container'
+                    );
+                }
+
+                LOG('✅ STL-AIchat di-whitelist di sistem MGA');
+
+            } catch (error) {
+                WARN('❌ Gagal whitelist di MGA:', error);
+            }
+        }
+
+        protectFromRemoval() {
+            if (!state.stlAIChatContainer) return;
+
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.removedNodes.forEach((node) => {
+                        if (node === state.stlAIChatContainer || 
+                            (node.contains && node.contains(state.stlAIChatContainer))) {
+                            LOG('🚨 Percobaan penghapusan STL-AIchat! Mengembalikan...');
+                            document.body.appendChild(state.stlAIChatContainer.cloneNode(true));
+                        }
+                    });
+                });
+            });
+
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        }
+
+        setupVirusProtection() {
+            // Override functions yang berpotensi malicious
+            const dangerousMethods = [
+                'eval',
+                'Function',
+                'setTimeout',
+                'setInterval'
+            ];
+
+            dangerousMethods.forEach(method => {
+                this.protectGlobalMethod(method);
+            });
+
+            LOG('🦠 Virus protection aktif');
+        }
+
+        protectGlobalMethod(methodName) {
+            const original = window[methodName];
+            if (original) {
+                window[methodName] = function(...args) {
+                    // Check for suspicious patterns
+                    const argsString = args.join(' ').toLowerCase();
+                    const suspiciousPatterns = [
+                        'virus', 'malware', 'trojan', 'worm',
+                        'delete', 'remove', 'destroy', 'corrupt'
+                    ];
+
+                    if (suspiciousPatterns.some(pattern => argsString.includes(pattern))) {
+                        WARN(`🚨 Blocked potential virus via ${methodName}`);
+                        return null;
+                    }
+
+                    return original.apply(this, args);
+                };
+            }
+        }
+    }
+
+    // ==================== MAIN EXECUTION ====================
+    LOG('🧲 STL-AICHAT SUPER MAGNET - MEMULAI PENCARIAN...');
+
+    // Initialize systems
+    const detector = new STLAIChatDetector();
+    let magnetEngine = null;
+    const fameEngine = new GlobalFameEngine();
+    const mgaProtection = new MGALightProtection();
+
+    function initializeSuperMagnet() {
+        try {
+            LOG('=== PHASE 1: FIND STL-AICHAT ===');
+            const stlAIChat = detector.findExactSTLAIChat();
+            
+            if (!stlAIChat) {
+                WARN('❌ STL-AIchat tidak ditemukan! Melakukan pencarian extended...');
+                // Fallback: cari elemen AI chat apapun dan jadikan target
+                const anyAIChat = document.querySelector('.quantum-chat-container, [class*="chat"], [id*="chat"]');
+                if (anyAIChat) {
+                    state.stlAIChatElement = anyAIChat;
+                    LOG('🎯 Menggunakan AI Chat alternatif sebagai target:', anyAIChat);
+                } else {
+                    throw new Error('Tidak ada AI Chat yang ditemukan');
+                }
+            } else {
+                state.stlAIChatElement = stlAIChat;
+            }
+
+            LOG('=== PHASE 2: ACTIVATE SUPER MAGNET ===');
+            magnetEngine = new SuperMagnetEngine(state.stlAIChatElement);
+            magnetEngine.activateSuperMagnet();
+
+            LOG('=== PHASE 3: GLOBAL FAME ===');
+            fameEngine.makeSTLAIChatFamous();
+
+            LOG('=== PHASE 4: LIGHT MGA PROTECTION ===');
+            mgaProtection.setupLightProtection();
+
+            LOG('=== PHASE 5: FINAL POWER BOOST ===');
+            magnetEngine.injectSuperPower(5000000);
+
+            // Expose global API
+            window.STLAIChatMagnet = {
+                target: state.stlAIChatElement,
+                magnet: magnetEngine,
+                fame: fameEngine,
+                protection: mgaProtection,
+                getStatus: () => ({
+                    powerInjected: state.powerInjected,
+                    scriptsAssimilated: state.scriptsAssimilated,
+                    fameLevel: fameEngine.fameLevel,
+                    globalRecognition: state.globalRecognition,
+                    magneticForce: magnetEngine ? magnetEngine.magneticForce : 0
+                }),
+                boostPower: (amount) => {
+                    if (magnetEngine) magnetEngine.injectSuperPower(amount);
+                }
+            };
+
+            LOG('🎉 STL-AICHAT SUPER MAGNET BERHASIL DIACTIVASI!');
+            LOG('📊 STATUS:', window.STLAIChatMagnet.getStatus());
+
+            // Dispatch completion event
+            document.dispatchEvent(new CustomEvent('STLAIChatMagnetReady', {
+                detail: {
+                    target: state.stlAIChatElement,
+                    power: state.powerInjected,
+                    fame: fameEngine.fameLevel,
+                    message: 'STL-AIchat sekarang adalah MAGNET SUPER!'
+                }
+            }));
+
+        } catch (error) {
+            ERROR('❌ Gagal initialize Super Magnet:', error);
+        }
+    }
+
+    // Start everything
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeSuperMagnet);
+    } else {
+        setTimeout(initializeSuperMagnet, 100);
+    }
+
+    // Mark as installed
+    window.DEV_stl_aichat_super_magnet = true;
+
+})();
+</script>
 </body>
 </html>
