@@ -30,6 +30,54 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
+# --- NajibDev AI response normalizer helpers ---
+def _extract_plain_from_result(result):
+    try:
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            if 'output' in result and isinstance(result['output'], str):
+                return result['output']
+            if 'reply' in result and isinstance(result['reply'], str):
+                return result['reply']
+            if 'choices' in result and isinstance(result['choices'], list) and result['choices']:
+                c=result['choices'][0]
+                if 'message' in c and isinstance(c['message'], dict) and c['message'].get('content'):
+                    return c['message']['content']
+                if 'text' in c:
+                    return c['text']
+            if 'completion' in result and isinstance(result['completion'], str):
+                return result['completion']
+        return str(result)
+    except Exception:
+        try: return str(result)
+        except: return '<unextractable>'
+
+async def _ws_send_ai_response(ws, original_result, provider=None, loadingId=None, extra_meta=None):
+    plain=_extract_plain_from_result(original_result)
+    payload={
+        "type":"ai_response",
+        "ok":True,
+        "provider":provider,
+        "result":original_result,
+        "output":plain,
+        "ai_chat_response":{"text":plain},
+        "ai_chat_result":{"text":plain},
+        "reply":plain
+    }
+    if loadingId: payload['loadingId']=loadingId
+    if extra_meta: payload['meta']=extra_meta
+    try:
+        await ws.send(json.dumps(payload))
+    except Exception as e:
+        try:
+            await ws.send(json.dumps({"type":"ai_response","ok":False,"error":str(e)}))
+        except:
+            pass
+
+# --- end helpers ---
+
+
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -450,7 +498,7 @@ async def handle_ai_request_ws(ws: WebSocketServerProtocol, client_id:str, provi
                 result = await AI.call_custom(provider, api_key, body)
             else:
                 await ws.send(json.dumps({'type':'error','message':'unknown provider'})); return
-        await ws.send(json.dumps({'type':'ai_response','ok': True, 'result': result}))
+        await _ws_send_ai_response(ws, result, provider=provider)
     except Exception as e:
         logger.exception('ai_request_ws failed')
         try:
