@@ -15184,7 +15184,7 @@ function exportDoc(filename, html){
   // Expose for debugging
   window.quantumRppV2 = { openDocModal, aiCallWithFallback, buildPrompt };
 
-})();
+}();
 </script>
 <!-- ==================== END INJECTION v2 ==================== -->
 <!-- ==================== INJECTION: RPP/PROMES/LKPD TOOLKIT ALL-IN (FINAL) ==================== -->
@@ -46109,6 +46109,365 @@ document.head.appendChild(notificationStyle);
 
   // run after DOM ready
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else setTimeout(boot, 30);
+})();
+</script>
+<!-- NajibDev: AI Global Engine V2 Injector (paste before </body>) -->
+<script>
+(function(){
+  'use strict';
+  const META = { name: 'NajibDev AI Global Engine V2', ver: '2.0' };
+  const WS_URL_DEFAULT = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'ws://localhost:8765' : (window.__STL_BACKEND_WS__ || 'ws://localhost:8765');
+  const HTTP_PROXY_DEFAULT = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:5000/api/proxy' : (window.__STL_BACKEND_PROXY__ || '/api/proxy');
+
+  // Utility helpers
+  const $ = id => document.getElementById(id);
+  const now = () => Date.now();
+  function safeLog(...args){ try{ console.info('[najibv2]', ...args); }catch(e){} }
+
+  // Append message into chat gracefully (use existing helpers when available)
+  function safeAppendMessage(content, opts = {}) {
+    // opts: { role: 'ai'|'user', isHtml: bool, filenameBase: string }
+    try {
+      const role = opts.role || 'ai';
+      const html = !!opts.isHtml;
+      // Prefer engine helper functions if present
+      if (typeof window.appendAiResponseToChat === 'function') {
+        // If it's plain text, pass raw; if html, pass html
+        try { window.appendAiResponseToChat(html ? content : String(content), String(content)); return; } catch(e){}
+      }
+      if (window.quantumEngine && typeof window.quantumEngine.addMessageToChat === 'function') {
+        try { window.quantumEngine.addMessageToChat({ role, text: String(content) }); return; } catch(e){}
+      }
+      if (typeof window.addMessageToChat === 'function') {
+        try { window.addMessageToChat({ role, text: String(content) }); return; } catch(e){}
+      }
+      // DOM fallback
+      const container = $('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+      if (!container) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'quantum-message ' + (role === 'user' ? 'user' : 'ai');
+      wrap.innerHTML = html ? content : `<p>${String(content).replace(/\n/g,'<br>')}</p>`;
+      container.appendChild(wrap);
+      container.scrollTop = container.scrollHeight;
+    } catch(err){ console.warn('[najibv2] safeAppendMessage', err); }
+  }
+
+  // Remove loading placeholder by id
+  function removeLoading(loadingId){
+    try{
+      const el = document.getElementById(loadingId);
+      if(el) el.remove();
+    }catch(e){}
+  }
+
+  // Create loading placeholder and return id
+  function createLoadingPlaceholder(){
+    try{
+      const cb = $('quantumChatMessages') || document.querySelector('.quantum-chat-messages');
+      if(!cb) return null;
+      const id = 'najibv2_loading_' + now();
+      const ld = document.createElement('div');
+      ld.id = id;
+      ld.className = 'quantum-message ai loading';
+      ld.innerHTML = `<i class="fas fa-circle-notch fa-spin"></i> Sedang berpikir...`;
+      cb.appendChild(ld);
+      cb.scrollTop = cb.scrollHeight;
+      return id;
+    }catch(e){ return null; }
+  }
+
+  // Smart provider direct-call helpers (OpenAI / Anthropic) - only used if user provided API key & chose direct mode
+  async function directCallOpenAI(apiKey, body) {
+    const url = (typeof window.__NAJIB_OPENAI_ENDPOINT__ === 'string' && window.__NAJIB_OPENAI_ENDPOINT__) ? window.__NAJIB_OPENAI_ENDPOINT__ : 'https://api.openai.com/v1/chat/completions';
+    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
+    const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if(!resp.ok) throw new Error('OpenAI direct call failed: ' + resp.status + ' ' + resp.statusText);
+    return await resp.json();
+  }
+  async function directCallAnthropic(apiKey, body) {
+    const url = (typeof window.__NAJIB_ANTHROPIC_ENDPOINT__ === 'string' && window.__NAJIB_ANTHROPIC_ENDPOINT__) ? window.__NAJIB_ANTHROPIC_ENDPOINT__ : 'https://api.anthropic.com/v1/complete';
+    const headers = { 'Content-Type': 'application/json', 'x-api-key': apiKey };
+    const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    if(!resp.ok) throw new Error('Anthropic direct call failed: ' + resp.status);
+    return await resp.json();
+  }
+
+  // Normalize various incoming AI response payloads to plain text
+  function extractTextFromAIMessage(msg) {
+    try {
+      if (!msg) return '';
+      // common shapes
+      if (typeof msg === 'string') return msg;
+      if (msg.output) return msg.output;
+      if (msg.message) return msg.message;
+      if (msg.reply) return msg.reply;
+      if (msg.result && typeof msg.result === 'string') return msg.result;
+      // OpenAI-like
+      if (msg.choices && Array.isArray(msg.choices) && msg.choices.length) {
+        const first = msg.choices[0];
+        if (first.message && first.message.content) return first.message.content;
+        if (first.text) return first.text;
+      }
+      // anthropic-ish
+      if (msg.completion) return msg.completion;
+      // fallback whole JSON
+      return JSON.stringify(msg);
+    } catch(e){ return JSON.stringify(msg); }
+  }
+
+  // WebSocket client (primary) - auto-reconnect
+  let ws = window.quantumWebSocket || null;
+  let wsReady = false;
+  let wsUrl = window.__STL_BACKEND_WS__ || WS_URL_DEFAULT;
+  function initWebSocket() {
+    try {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        wsReady = ws.readyState === WebSocket.OPEN;
+        window.quantumWebSocket = ws;
+        return;
+      }
+      ws = new WebSocket(wsUrl);
+      window.quantumWebSocket = ws;
+      ws.addEventListener('open', () => {
+        safeLog('WS connected', wsUrl);
+        wsReady = true;
+        try{ ws.send(JSON.stringify({ type:'client_ready', meta: META, ts: new Date().toISOString() })); }catch(e){}
+      });
+      ws.addEventListener('message', ev => {
+        try {
+          const msg = JSON.parse(ev.data);
+          // support many shapes
+          if (msg.type === 'ai_response' || msg.type === 'ai_chat_response' || msg.type === 'ai_chat_result' || msg.type === 'ai:response') {
+            const txt = extractTextFromAIMessage(msg);
+            removeLoading(msg.loadingId || msg._loadingId || '');
+            safeAppendMessage(txt, { role: 'ai' });
+            return;
+          }
+          // component event responses
+          if (msg.type === 'component_event_response') {
+            // emit a DOM event for other code
+            document.dispatchEvent(new CustomEvent('NajibDevMessage', { detail: msg }));
+            return;
+          }
+          // fallback: emit
+          document.dispatchEvent(new CustomEvent('NajibDevMessage', { detail: msg }));
+        } catch(e) {
+          console.warn('[najibv2] ws msg parse failed', e);
+        }
+      });
+      ws.addEventListener('close', () => {
+        safeLog('WS closed - retrying in 2s');
+        wsReady = false;
+        setTimeout(initWebSocket, 2000);
+      });
+      ws.addEventListener('error', (e) => {
+        console.warn('[najibv2] ws error', e);
+        wsReady = false;
+      });
+    } catch(e) {
+      console.warn('[najibv2] initWebSocket failed', e);
+    }
+  }
+  initWebSocket();
+
+  // Main send pipeline:
+  // 1) Try window.__stl_real_api.sendToProvider (engine internal) if exists
+  // 2) Try window.quantumEngine.realAPI if exists
+  // 3) Try WebSocket with type: 'ai_request'
+  // 4) Try HTTP proxy to /api/proxy
+  // 5) If user set direct=true and provided apiKey & provider, call provider endpoint directly (OpenAI/Anthropic)
+  async function sendAIRequest(text, options = {}) {
+    options = options || {};
+    const provider = options.provider || (document.getElementById('aiProvider') && document.getElementById('aiProvider').value) || 'openai';
+    const apiKeyUI = (document.getElementById('aiApiKey') && document.getElementById('aiApiKey').value) || options.apiKey || '';
+    const customUrl = (document.getElementById('aiCustomUrl') && document.getElementById('aiCustomUrl').value) || options.customUrl || '';
+    const model = options.model || (document.getElementById('aiModel') && document.getElementById('aiModel').value) || options.model || 'gpt-4';
+    const max_tokens = options.max_tokens || 800;
+    const temperature = (typeof options.temperature !== 'undefined') ? options.temperature : 0.7;
+    const direct = !!options.direct; // force direct provider call if true
+    const proxyUrl = window.__STL_BACKEND_PROXY__ || HTTP_PROXY_DEFAULT;
+
+    const loadingId = createLoadingPlaceholder();
+
+    // 1) try internal stub: window.__stl_real_api
+    try {
+      if (window.__stl_real_api && typeof window.__stl_real_api.sendToProvider === 'function') {
+        safeLog('Using window.__stl_real_api.sendToProvider');
+        const res = await window.__stl_real_api.sendToProvider(text, { provider, apiKey: apiKeyUI, model, temperature, max_tokens, customUrl });
+        removeLoading(loadingId);
+        const parsed = extractTextFromAIMessage(res);
+        safeAppendMessage(parsed, { role:'ai' });
+        return parsed;
+      }
+    } catch(e){ console.warn('[najibv2] __stl_real_api failed', e); }
+
+    // 2) try quantumEngine.realAPI
+    try {
+      if (window.quantumEngine && typeof window.quantumEngine.realAPI === 'function') {
+        safeLog('Using quantumEngine.realAPI');
+        const res = await window.quantumEngine.realAPI({ text, provider, apiKey: apiKeyUI, model, temperature, max_tokens, customUrl });
+        removeLoading(loadingId);
+        const parsed = extractTextFromAIMessage(res);
+        safeAppendMessage(parsed, { role:'ai' });
+        return parsed;
+      }
+    } catch(e){ console.warn('[najibv2] quantumEngine.realAPI failed', e); }
+
+    // 3) try WebSocket 'ai_request'
+    try {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        safeLog('Sending via WS ai_request');
+        const payload = { type: 'ai_request', provider, body: { model, messages:[{ role:'user', content: text }], max_tokens, temperature }, meta:{ from: 'najibv2' }, loadingId };
+        ws.send(JSON.stringify(payload));
+        // we'll rely on WS message handler to remove loading & append response
+        return null;
+      }
+    } catch(e){ console.warn('[najibv2] WS ai_request failed', e); }
+
+    // 4) try HTTP proxy to backend /api/proxy
+    try {
+      safeLog('Sending via HTTP proxy', proxyUrl);
+      const body = { provider, apiKey: apiKeyUI, prompt: text, model, max_tokens, temperature };
+      const res = await fetch(proxyUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'same-origin' });
+      const j = await res.json();
+      removeLoading(loadingId);
+      // proxy may return { reply, raw, result }
+      let out = null;
+      if (j) {
+        if (typeof j.reply === 'string') out = j.reply;
+        else if (j.result && j.result.choices && j.result.choices[0]) {
+          const c = j.result.choices[0];
+          out = (c.message && c.message.content) ? c.message.content : (c.text || JSON.stringify(c));
+        } else if (j.result && typeof j.result === 'string') out = j.result;
+        else out = extractTextFromAIMessage(j);
+      }
+      safeAppendMessage(out || 'Maaf, tidak ada balasan dari proxy.', { role:'ai' });
+      return out;
+    } catch(e){ console.warn('[najibv2] HTTP proxy failed', e); }
+
+    // 5) fallback: direct provider call (only if apiKey present)
+    try {
+      if (direct || apiKeyUI) {
+        safeLog('Attempting direct provider call', provider);
+        if (provider.toLowerCase().includes('anthropic')) {
+          const pbody = { prompt: text, model, max_tokens, temperature };
+          const res = await directCallAnthropic(apiKeyUI, pbody);
+          removeLoading(loadingId);
+          const txt = extractTextFromAIMessage(res);
+          safeAppendMessage(txt, { role:'ai' });
+          return txt;
+        } else {
+          // default: OpenAI-compatible
+          const pbody = { model, messages: [{ role:'user', content: text }], max_tokens, temperature };
+          // if customUrl provided, use it
+          if (customUrl) {
+            const res = await fetch(customUrl, { method:'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKeyUI}` }, body: JSON.stringify(pbody) });
+            const j = await res.json();
+            removeLoading(loadingId);
+            const txt = extractTextFromAIMessage(j);
+            safeAppendMessage(txt, { role:'ai' });
+            return txt;
+          } else {
+            // call OpenAI
+            const j = await directCallOpenAI(apiKeyUI, pbody);
+            removeLoading(loadingId);
+            const txt = extractTextFromAIMessage(j);
+            safeAppendMessage(txt, { role:'ai' });
+            return txt;
+          }
+        }
+      }
+    } catch(e){ console.warn('[najibv2] direct call failed', e); removeLoading(loadingId); }
+
+    // ultimate fallback
+    removeLoading(loadingId);
+    safeAppendMessage('Maaf, semua jalur pengiriman AI gagal. Periksa konfigurasi API/Backend.', { role:'ai' });
+    return null;
+  }
+
+  // Attach to UI events (send button, enter key, start chat)
+  function attachUIHooks() {
+    try {
+      const inputSelectors = ['#quantumChatInput', '#ai-chat-input', '.quantum-chat-input', 'textarea[name="message"]'];
+      const buttonSelectors = ['#sendQuantumMessage', 'button.send', 'button.sendQuantumMessage', '.quantum-send-btn'];
+      let inputEl = null;
+      for (const s of inputSelectors) { inputEl = inputEl || document.querySelector(s); }
+      let sendBtn = null;
+      for (const s of buttonSelectors) { sendBtn = sendBtn || document.querySelector(s); }
+
+      // attach click
+      if (sendBtn && !sendBtn.__najibv2_hooked) {
+        sendBtn.__najibv2_hooked = true;
+        sendBtn.addEventListener('click', async (e) => {
+          try {
+            const txt = (inputEl && inputEl.value) ? inputEl.value.trim() : '';
+            if (!txt) return;
+            // show user message using existing UI
+            safeAppendMessage(txt, { role:'user' });
+            if (inputEl) { inputEl.value = ''; inputEl.style.height = 'auto'; }
+            // call pipeline
+            await sendAIRequest(txt);
+          } catch(err){ console.error('[najibv2] sendBtn click', err); }
+        });
+      }
+
+      // attach enter key
+      if (inputEl && !inputEl.__najibv2_enter) {
+        inputEl.__najibv2_enter = true;
+        inputEl.addEventListener('keydown', async (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            const txt = (inputEl.value || '').trim();
+            if (!txt) return;
+            safeAppendMessage(txt, { role:'user' });
+            inputEl.value = '';
+            await sendAIRequest(txt);
+          }
+        });
+      }
+
+      // Start Chat focus helper
+      const startBtn = $('openAIChat') || document.querySelector('.quantum-home-btn.ai-chat, #openAIChat');
+      if (startBtn && !startBtn.__najibv2_focus) {
+        startBtn.__najibv2_focus = true;
+        startBtn.addEventListener('click', () => setTimeout(()=>{ const i = $('quantumChatInput'); if (i) i.focus(); }, 600));
+      }
+    } catch(e){ console.warn('[najibv2] attachUIHooks failed', e); }
+  }
+
+  // Wire into existing bridgeToAI if present (non-destructive)
+  function patchExistingBridge() {
+    try {
+      if (typeof window.bridgeToAI === 'function' && !window.bridgeToAI.__najibv2_patched) {
+        const orig = window.bridgeToAI;
+        window.bridgeToAI = async function(text, opts){
+          try {
+            await sendAIRequest(text, opts||{});
+          } catch(e){ console.warn('[najibv2] patched bridgeToAI failed, falling back to original', e); return orig(text, opts); }
+        };
+        window.bridgeToAI.__najibv2_patched = true;
+        safeLog('Patched existing bridgeToAI to route via NajibDev v2');
+      }
+    } catch(e){ console.warn('[najibv2] patchExistingBridge failed', e); }
+  }
+
+  // Public API exposure
+  window.NajibDev = window.NajibDev || {};
+  window.NajibDev.sendAIRequest = sendAIRequest;
+  window.NajibDev.init = function(opts){
+    if (opts && opts.wsUrl) { wsUrl = opts.wsUrl; }
+    initWebSocket();
+    attachUIHooks();
+    patchExistingBridge();
+  };
+  // Auto init
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { initWebSocket(); attachUIHooks(); patchExistingBridge(); });
+  } else {
+    initWebSocket(); attachUIHooks(); patchExistingBridge();
+  }
+
+  safeLog('AI Global Engine V2 injected');
 })();
 </script>
 </body>
