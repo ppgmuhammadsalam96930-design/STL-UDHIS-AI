@@ -5096,6 +5096,114 @@ html {
 }
 body,html{ overflow-x:hidden !important; }
 </style>
+<script>
+/* MGA18 Master Stronger — LITE HYBRID
+   Menggunakan NajibDev Core, tapi tanpa beban berat MGA18 full.
+   Tetap memberi prioritas absolut ke AI Chat Lama.
+*/
+(function(){
+  'use strict';
+  if(window.MGA18 && window.MGA18._hybrid) return;
+
+  window.MGA18 = window.MGA18 || {};
+  window.MGA18._hybrid = true;
+
+  /* ============================
+        1. NajibDev Core Flag
+     ============================ */
+  window.NajibDev = window.NajibDev || {};
+  window.NajibDev.signature = 'najibdev-core-lite';
+  window.NajibDev.version = '7.0-hybrid';
+
+  /* ============================
+        2. Backend Priority Core
+     ============================ */
+  window.MGA18.sendToBackend = async function(txt){
+    try{
+      let ws = window.quantumWebSocket || window._quantum_ws;
+      if(ws && ws.readyState === WebSocket.OPEN){
+        ws.send(JSON.stringify({
+          type:'ai_request',
+          body:{ model:'gpt-4', messages:[{role:'user',content:txt}] },
+          meta:{from:'mga18-lite'}
+        }));
+        return;
+      }
+
+      // fallback
+      const r = await fetch('/api/proxy',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({prompt:txt,model:'gpt-4'})
+      });
+      const j = await r.json();
+      const out = j.reply || j.output || JSON.stringify(j);
+
+      // append to legacy UI
+      if(typeof window.appendAiResponseToChat === 'function'){
+        window.appendAiResponseToChat(out,out);
+      }
+
+      return out;
+    }catch(e){ console.warn('[MGA18-lite-backend]',e); }
+  };
+
+  /* ==================================================
+      3. Super Priority Routing (tanpa heavy observer)
+     ================================================== */
+  const route = (t)=>{
+    if(!t) return;
+    window.MGA18.sendToBackend(t);
+  };
+
+  // Hook beberapa jalur AI inti
+  function hook(obj, fn){
+    if(obj && typeof obj[fn] === 'function'){
+      const old = obj[fn].bind(obj);
+      obj[fn] = function(x){
+        route(x?.text || x?.message || x);
+        return old(x);
+      };
+    }
+  }
+
+  // Global
+  if(typeof window.globalAiRouter === 'function'){
+    const o = window.globalAiRouter;
+    window.globalAiRouter = function(t){ route(t); return o(t); };
+  } else {
+    window.globalAiRouter = route;
+  }
+
+  // Chat Engines
+  hook(window.STL_ChatCore, 'publish');
+  hook(window.EventBus, 'emit');
+  hook(window.quantumEngine, 'addUserMessage');
+  hook(window.ChatCore, 'send');
+  hook(window.ChatAdapter, 'push');
+  hook(window.AIInterface, 'request');
+
+  /* ============================
+        4. Protect Legacy Panel
+     ============================ */
+  const root = document.getElementById('najib_chat_root');
+  if(root){
+    const mo = new MutationObserver(m=>{
+      m.forEach(r=>{
+        r.removedNodes?.forEach(n=>{
+          if(n===root){
+            document.body.appendChild(root);
+            console.info('[MGA18-Lite] Legacy panel re-attached');
+          }
+        });
+      });
+    });
+    mo.observe(document.body,{childList:true});
+  }
+
+  console.info('[MGA18 Master Stronger — LITE HYBRID installed]');
+})();
+  </script>
     <!-- Quantum AI Nexus Custom Styles -->
     <style>
         /* ==================== QUANTUM VARIABLES & THEME SYSTEM ==================== */
@@ -48373,6 +48481,160 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
     // Mark as installed
     window.DEV_stl_aichat_super_magnet = true;
 
+})();
+</script>
+<script>
+/* --------------------------------------------------------
+   MGA18 MAX-ROUTER (NajibDev + Ultra-Lite + Multi-Button)
+   MENGARAHKAN SEMUA SEND / VOICE / RPP / MUTASI TOMBOL
+   KE AI CHAT LAMA — TANPA DELAY, TANPA KONFLIK
+---------------------------------------------------------*/
+(function(){
+  'use strict';
+  if(window.MGA18 && window.MGA18._maxrouter_installed) return;
+
+  /* ====== CORE FLAGS ====== */
+  window.MGA18 = window.MGA18 || {};
+  window.MGA18._maxrouter_installed = true;
+
+  /* ====== BEST SEND FUNCTION ====== */
+  const sendToLegacy = (txt)=>{
+    try{
+      if(!txt) return;
+      if(window.MGA18 && typeof window.MGA18.sendToBackend === "function"){
+        return window.MGA18.sendToBackend(txt);
+      }
+    }catch(e){}
+  };
+
+  /* ====== UNIVERSAL FORCE SEND ====== */
+  function forceSendExtract(v){
+    if(!v) return;
+    v = (v.text || v.message || v.prompt || v) + "";
+    if(v.trim() === "") return;
+    return sendToLegacy(v);
+  }
+
+  /* ======================================================
+     1. GLOBAL PATCH (paling kuat)
+  ====================================================== */
+  // globalAiRouter
+  if(typeof window.globalAiRouter === "function"){
+    const ori = window.globalAiRouter;
+    window.globalAiRouter = (t)=>{ sendToLegacy(t); return ori(t); };
+  } else {
+    window.globalAiRouter = (t)=>sendToLegacy(t);
+  }
+
+  /* ======================================================
+     2. PATCH CORE (EventBus, ChatCore)
+  ====================================================== */
+  if(window.STL_ChatCore && typeof window.STL_ChatCore.publish === "function"){
+    const old = window.STL_ChatCore.publish.bind(window.STL_ChatCore);
+    window.STL_ChatCore.publish = function(msg){
+      try{ forceSendExtract(msg); }catch(e){}
+      return old(msg);
+    };
+  }
+
+  if(window.EventBus && typeof window.EventBus.emit === "function"){
+    const oldEv = window.EventBus.emit.bind(window.EventBus);
+    window.EventBus.emit = function(ev,p){
+      try{
+        if(ev.includes("send") || ev.includes("user")){
+          forceSendExtract(p);
+        }
+      }catch(e){}
+      return oldEv(ev,p);
+    };
+  }
+
+  /* ======================================================
+     3. PATCH QUANTUM / MGA ENGINE
+  ====================================================== */
+  const list = [
+    [window.quantumEngine, "addUserMessage"],
+    [window.ChatCore, "send"],
+    [window.ChatAdapter, "push"],
+    [window.AIInterface, "request"],
+    [window, "sendMessage"],
+    [window, "sendToAI"],
+    [window, "sendPrompt"],
+    [window, "requestAI"]
+  ];
+
+  list.forEach(([obj, fn])=>{
+    try{
+      if(obj && typeof obj[fn] === "function"){
+        const o = obj[fn].bind(obj);
+        obj[fn] = function(x){
+          forceSendExtract(x);
+          return o(x);
+        };
+      }
+    }catch(e){}
+  });
+
+  /* ======================================================
+     4. PATCH SEMUA MUTASI TOMBOL (send, voice, RPP, dsb.)
+  ====================================================== */
+  function patchButtons(){
+    const btnSelectors = [
+      "#sendQuantumMessage",
+      ".send-btn",
+      ".btn-send",
+      "[data-send]",
+      "#voiceRecordBtn",
+      "#rppSendBtn",
+      "#aiSendBtn",
+      ".button-send",
+      "button[data-action='send']",
+      "button[data-ai]"
+    ];
+
+    btnSelectors.forEach(sel=>{
+      document.querySelectorAll(sel).forEach(btn=>{
+        btn.addEventListener("click", function(e){
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          const input =
+            document.querySelector("#quantumChatInput") ||
+            document.querySelector("textarea") ||
+            document.querySelector("input");
+          if(input) sendToLegacy(input.value);
+        }, true);
+      });
+    });
+  }
+
+  /* re-run patch setiap 300ms  (ultra ringan karena hanya querySelectorAll, bukan observer) */
+  setInterval(()=>patchButtons(), 300);
+
+  /* ======================================================
+     5. PATCH ENTER KEY (universal)
+  ====================================================== */
+  function patchEnter(){
+    document.querySelectorAll("input,textarea").forEach(inp=>{
+      inp.addEventListener("keydown", function(e){
+        if(e.key === "Enter" && !e.shiftKey){
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          sendToLegacy(inp.value);
+          inp.value = "";
+        }
+      }, true);
+    });
+  }
+  setInterval(()=>patchEnter(), 300);
+
+  /* ======================================================
+     6. PATCH RECORD VOICE (jika ada event)
+  ====================================================== */
+  window.onVoiceRecorded = function(result){
+    sendToLegacy(result || "🎤 Voice message");
+  };
+
+  console.info("[MGA18 MAX-ROUTER installed → ALL buttons routed to AI Chat Lama]");
 })();
 </script>
 </body>
