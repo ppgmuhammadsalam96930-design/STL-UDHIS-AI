@@ -3210,9 +3210,7 @@ function insertCardAfterMarker(card, sidebar){
         document.head.appendChild(styleEl);
       }
       // Prepend critical rules so they apply early
-      styleEl.textContent = rules.join('
-') + '
-' + (styleEl.textContent || '');
+      styleEl.textContent = rules.join('') + (styleEl.textContent || '');
       safeLog('Applied', rules.length, 'stabilizer CSS rules');
     }catch(e){ safeWarn('applyCSS failed', e); }
   }
@@ -15089,39 +15087,25 @@ Format tabel: KD / Indikator / Kegiatan Pembelajaran / Asesmen / Alat & Sumber`
 
   function downloadDocFromHtml(html, filename='document'){
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>"+filename+"</title>
-<style id="layoutfixer_psychology_duo">
-#toggleAdultPsychology,
-#psychologychild-toggle {
- width:20px!important;
- height:20px!important;
- border-radius:12px!important;
- background:rgba(255,255,255,0.18)!important;
- backdrop-filter:blur(6px)!important;
- border:none!important;
- color:#fff!important;
- font-size:11px!important;
- display:flex!important;
- align-items:center!important;
- justify-content:center!important;
- cursor:pointer!important;
- z-index:10000!important;
- transition:.22s!important;
-}
-#toggleAdultPsychology:hover,
-#psychologychild-toggle:hover {
- background:rgba(0,0,0,0.88)!important;
- transform:scale(1.18)!important;
- box-shadow:0 0 10px rgba(0,180,255,0.55)!important;
-}
-</style>
 
-</head><body>";
-    const footer="</body></html>";
+function exportDoc(filename, html){
+    const header = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>`;
+    const footer = `</body></html>`;
     const sourceHTML = header + html + footer;
+
     const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
-    if(window.saveAs) saveAs(blob, `${filename}.doc`);
-    else { const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `${filename}.doc`; document.body.appendChild(link); link.click(); link.remove(); }
-  }
+
+    if (window.saveAs) {
+        saveAs(blob, `${filename}.doc`);
+    } else {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${filename}.doc`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    }
+}
 
   function generateQrImageUrl(text, size=200){ const encoded = encodeURIComponent(text); return `https://chart.googleapis.com/chart?cht=qr&chs=${size}x${size}&chl=${encoded}&chld=L|1`; }
 
@@ -16430,7 +16414,31 @@ try {
   });
 })();
 </script>
-<!-- === END FRONTEND SECURE/BACKUP UI === -->
+<style id="layoutfixer_psychology_duo">
+#toggleAdultPsychology,
+#psychologychild-toggle {
+    width: 20px !important;
+    height: 20px !important;
+    border-radius: 12px !important;
+    background: rgba(255,255,255,0.18) !important;
+    backdrop-filter: blur(6px) !important;
+    border: none !important;
+    color: #fff !important;
+    font-size: 11px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    z-index: 10000 !important;
+    transition: .22s !important;
+}
+#toggleAdultPsychology:hover,
+#psychologychild-toggle:hover {
+    background: rgba(0,0,0,0.88) !important;
+    transform: scale(1.18) !important;
+    box-shadow: 0 0 10px rgba(0,180,255,0.55) !important;
+}
+</style>
 <script>
   // === BACKUP & SECURE URI endpoints (add to server.js) ===
 const AWS = require('aws-sdk');
