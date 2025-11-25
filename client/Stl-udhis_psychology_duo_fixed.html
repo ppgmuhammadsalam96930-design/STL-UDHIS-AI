@@ -48903,5 +48903,58 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
     console.info(MODULE,"ready — navbar micro-toggle active.");
 })();
 </script>
+<script id="najibdev-ios26-global-transitions">
+(function(){
+    const css = `
+        .ios26-transition {
+            transition:
+                opacity 0.38s cubic-bezier(0.25, 0.80, 0.45, 1),
+                transform 0.38s cubic-bezier(0.25, 0.80, 0.45, 1) !important;
+            will-change: opacity, transform;
+        }
+        .ios26-fade {
+            transition: opacity 0.38s cubic-bezier(0.25, 0.80, 0.45, 1) !important;
+            will-change: opacity;
+        }
+        .ios26-slide {
+            transition: transform 0.38s cubic-bezier(0.25, 0.80, 0.45, 1) !important;
+            will-change: transform;
+        }
+    `;
+    const style = document.createElement("style");
+    style.id = "najibdev-ios26-global-style";
+    style.textContent = css;
+    document.head.appendChild(style);
+
+    const targets = [
+        "#quantumAIChat",
+        "#quantumHomeBase",
+        "#left-sidebar",
+        "#right-sidebar",
+        "#quantumDeveloperPanel",
+        ".quantum-card",
+        ".qt-panel",
+        ".quantum-fade-container",
+        ".quantum-slide-panel",
+        ".quantum-grade-btn",
+        ".menu-toggle",
+        ".mode-changer"
+    ];
+
+    function apply(){
+        targets.forEach(sel=>{
+            document.querySelectorAll(sel).forEach(el=>{
+                el.classList.add("ios26-transition", "ios26-fade", "ios26-slide");
+            });
+        });
+    }
+
+    if(document.readyState==="loading")
+        document.addEventListener("DOMContentLoaded", apply);
+    else apply();
+
+    console.log("💙 iOS26 Global Transition Engine Activated");
+})();
+</script>
 </body>
 </html>
