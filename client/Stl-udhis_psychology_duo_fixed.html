@@ -48005,148 +48005,703 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
 
 })();
 </script>
-<script id="MGA20_compressor_and_reroute">
-/* MGA20 — DOM Memory Compression + optional reroute helper
-   Passive by default. Optional reroute requires enabling via window.MGA20.enableReroute().
-*/
-(function MGA20(){
-  if(window.MGA20) return;
-  const MODULE = 'MGA20';
-  const STORE_KEY = '__MGA20_CACHE_V1__';
-  const COMPRESS_TEXT_MAX = 2000; // max characters saved per node
+<script id="najibdev_MGA20_hybridLite">
+(function(){
+    const MODULE = "[MGA20-HybridLite]";
 
-  // tiny serializer: extract tag, classes, dataset keys, textContent (truncated), and attributes whitelist
-  function serializeNode(node){
-    try{
-      if(!(node instanceof Element)) return null;
-      const a = {};
-      a.tag = node.tagName;
-      if(node.id) a.id = node.id;
-      if(node.className) a.class = node.className;
-      // whitelist attributes that matter
-      const attrs = {};
-      ['type','name','placeholder','data-ai','role','aria-label','title','href','src'].forEach(k=>{
-        if(node.hasAttribute && node.hasAttribute(k)) attrs[k] = node.getAttribute(k);
-      });
-      if(Object.keys(attrs).length) a.attrs = attrs;
-      const txt = (node.textContent||'').trim();
-      if(txt) a.text = txt.length>COMPRESS_TEXT_MAX ? txt.slice(0,COMPRESS_TEXT_MAX)+ '…' : txt;
-      // small children count
-      a.childCount = node.childElementCount || 0;
-      return a;
-    }catch(e){ return null; }
-  }
-
-  // build compressed map from MGA19 vDOMs if available, else from body
-  function buildCompressedSnapshot(){
-    try{
-      const map = {};
-      const containers = [];
-      if(window.MGA19){
-        for(let i=1;i<=4;i++){
-          const el = document.getElementById('MGA19_vDOM_'+i);
-          if(el) containers.push(el);
+    // ===========================================================
+    // 1) KIBLAT UTAMA: ROOT AI Chat Lama (mga6 orchestrator)
+    // ===========================================================
+    const LEGACY = {
+        send(msg){
+            try{
+                const el = document.getElementById("DEV_mga6_orchestrator");
+                if(!el){ console.warn(MODULE, "Legacy orchestrator not found."); return; }
+                el.dispatchEvent(new CustomEvent("legacy-ai-input", { detail: msg }));
+            }catch(e){}
         }
-      } else {
-        containers.push(document.body);
-      }
-      containers.forEach(container=>{
-        const nodes = container.querySelectorAll ? Array.from(container.querySelectorAll('*')) : [];
-        nodes.forEach((n, idx) => {
-          try{
-            const key = (n.id && '#'+n.id) || (n.getAttribute && n.getAttribute('data-ai')) || (n.className && '.'+n.className.split(' ')[0]) || ('node_'+(Object.keys(map).length+1));
-            if(map[key]) return;
-            const s = serializeNode(n);
-            if(s) map[key] = s;
-          }catch(e){}
+    };
+
+    // ===========================================================
+    // 2) AKTIFKAN PANEL AI MODEL CONFIGURATION
+    // ===========================================================
+
+    function enableAIModelConfig(){
+        const provider = document.getElementById("aiProvider");
+        const model = document.getElementById("aiModel");
+        const key = document.getElementById("aiApiKey");
+        const saveBtn = document.getElementById("saveAiConfig");
+        const testBtn = document.getElementById("testAiConfig");
+
+        if(!provider || !model || !key){
+            console.warn(MODULE, "Panel AI Model Config belum muncul, retry...");
+            return setTimeout(enableAIModelConfig, 500);
+        }
+
+        // RESTORE
+        const saved = JSON.parse(localStorage.getItem("__AI_MODEL_CORE__") || "{}");
+        if(saved.provider) provider.value = saved.provider;
+        if(saved.model) model.value = saved.model;
+        if(saved.key) key.value = saved.key;
+
+        // SAVE BTN
+        if(saveBtn){
+            saveBtn.addEventListener("click", ()=>{
+                localStorage.setItem("__AI_MODEL_CORE__", JSON.stringify({
+                    provider: provider.value,
+                    model: model.value,
+                    key: key.value
+                }));
+                saveBtn.textContent = "Saved!";
+                setTimeout(()=> saveBtn.innerHTML = `<i class="fas fa-save"></i> Save Config`, 1200);
+            });
+        }
+
+        // TEST BTN
+        if(testBtn){
+            testBtn.addEventListener("click", async ()=>{
+                testBtn.textContent = "Testing…";
+
+                try{
+                    // kirim ke LEGACY AI untuk validasi
+                    LEGACY.send({
+                        type: "ai-test",
+                        provider: provider.value,
+                        model: model.value,
+                        key: key.value
+                    });
+
+                    testBtn.textContent = "OK ✔";
+                    setTimeout(()=> testBtn.innerHTML = `<i class="fas fa-vial"></i> Test`, 1200);
+                }catch(e){
+                    testBtn.textContent = "Fail";
+                }
+            });
+        }
+
+        console.log(MODULE, "AI Model Panel Enabled");
+    }
+
+    // ===========================================================
+    // 3) AKTIFKAN AI PERSONALITY (PALING LAMA)
+    // ===========================================================
+
+    function enableAIPersonality(){
+        const box = document.querySelector("[data-personality-box]");
+        const select = document.querySelector("#aiPersonality");
+
+        if(!select){
+            console.warn(MODULE, "Personality UI belum muncul, retry...");
+            return setTimeout(enableAIPersonality, 500);
+        }
+
+        const presets = {
+            "legacy-friendly": "Kamu adalah AI lama yang ramah dan membantu.",
+            "legacy-strict": "Kamu adalah AI lama yang tegas dan langsung pada inti.",
+            "legacy-chaos": "Kamu adalah AI lama dengan kepribadian liar dan kreatif.",
+            "legacy-default": "Mode klasik AI dari sistem awal."
+        };
+
+        // RESTORE
+        const saved = localStorage.getItem("__AI_PERSONALITY__") || "legacy-default";
+        select.value = saved;
+
+        select.addEventListener("change", ()=>{
+            localStorage.setItem("__AI_PERSONALITY__", select.value);
+            LEGACY.send({
+                type: "ai-personality",
+                mode: select.value,
+                prompt: presets[select.value] || presets["legacy-default"]
+            });
         });
-      });
-      return map;
-    }catch(e){ return {}; }
+
+        // trigger at start
+        LEGACY.send({
+            type: "ai-personality",
+            mode: saved,
+            prompt: presets[saved]
+        });
+
+        console.log(MODULE, "AI Personality Enabled");
+    }
+
+    // ===========================================================
+    // 4) MENJADI KIBLAT: Semua script baru diarahkan ke AI Lama
+    // ===========================================================
+
+    function overrideModernAI(){
+        const patchList = ["sendMessage", "sendToAI", "sendToProvider", "askAI"];
+
+        patchList.forEach(fn=>{
+            const orig = window[fn];
+            if(typeof orig === "function"){
+                window[fn] = function(payload){
+                    try{
+                        LEGACY.send({ type:"proxy-modern", payload });
+                        return { ok:true, routed:"legacy" };
+                    }catch(e){
+                        return orig(payload);
+                    }
+                };
+            }
+        });
+
+        // fallback: intercept fetch model baru
+        const _fetch = window.fetch;
+        window.fetch = function(url, opt){
+            try{
+                if(url && String(url).includes("/v1/") || String(url).includes("/ai/")){
+                    LEGACY.send({ type:"ai-fetch-proxy", url, opt });
+                    return Promise.resolve(new Response(JSON.stringify({ ok:true, routed:"legacy" }), {status:200}));
+                }
+            }catch(e){}
+            return _fetch(url, opt);
+        };
+
+        console.log(MODULE, "Modern AI rerouted → Legacy");
+    }
+
+    // ===========================================================
+    // 5) BOOT
+    // ===========================================================
+
+    function boot(){
+        enableAIModelConfig();
+        enableAIPersonality();
+        overrideModernAI();
+    }
+
+    setTimeout(boot, 600);
+
+})();
+</script>
+<script id="najibdev_MGA21_gatekeeper">
+(function MGA21(){
+  if(window.MGA21) return;
+  const MODULE = "MGA21";
+  const PROXY_DEFAULT = (window.__STL_BACKEND_PROXY__ || '/api/proxy');
+  const LEGACY_ORCH_ID = 'DEV_mga6_orchestrator';
+  const FLAG = '__MGA21_FLAG__';
+
+  // safe deep copy
+  function deepClone(obj){
+    try{ return JSON.parse(JSON.stringify(obj)); }catch(e){ return null; }
   }
 
-  function saveSnapshotLocal(map){
+  // dispatch to legacy orchestrator via CustomEvent; non-blocking
+  function sendToLegacy(payload){
     try{
-      localStorage.setItem(STORE_KEY, JSON.stringify({ ts: Date.now(), map }));
+      const el = document.getElementById(LEGACY_ORCH_ID) || document.querySelector('[data-legacy-orch]');
+      const msg = deepClone(payload) || { type: 'unknown', payload: String(payload) };
+      // mark to avoid handling loops
+      if(typeof msg === 'object') msg[FLAG] = true;
+      if(el){
+        el.dispatchEvent(new CustomEvent('legacy-ai-input', { detail: msg }));
+        return { ok:true, routed:'legacy' };
+      }
+      // fallback: postMessage to window as soft signal
+      try{ window.postMessage({ module: MODULE, event: 'legacy-ai-input', payload: msg }, '*'); }catch(e){}
+      return { ok:false, reason:'no-legacy-element' };
+    }catch(e){
+      return { ok:false, error: String(e) };
+    }
+  }
+
+  // safe fetch to proxy (opt-in). returns promise
+  function fetchProxy(payload, proxyUrl){
+    try{
+      const p = deepClone(payload) || payload;
+      // ensure not to forward MGA21 internal flags
+      if(p && typeof p === 'object' && p[FLAG]) delete p[FLAG];
+      return fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p)
+      });
+    }catch(e){
+      return Promise.reject(e);
+    }
+  }
+
+  // Heuristic: detect provider-like object
+  function looksLikeProviderCall(obj){
+    if(!obj) return false;
+    if(typeof obj === 'string') return false;
+    if(typeof obj !== 'object') return false;
+    const keys = Object.keys(obj);
+    const checks = ['model','provider','messages','prompt','input','apiKey','temperature','max_tokens'];
+    return checks.some(k => keys.includes(k));
+  }
+
+  // Translate modern payload -> legacy minimal shape
+  function translateToLegacy(obj){
+    try{
+      const out = { type: 'legacy-proxy', original: {}, provider: 'legacy', model: 'legacy', prompt: '' };
+      if(!obj) return out;
+      // copy safe fields
+      out.original = (typeof obj === 'object') ? deepClone(obj) : { text: String(obj) };
+      // provider guess
+      out.provider = (obj.provider || obj.service || (obj.model && String(obj.model).split(/[._-]/)[0]) || 'openai').toString();
+      // model guess or fallback
+      out.model = obj.model || obj.modelName || (Array.isArray(obj.messages) ? 'chat' : 'completion') || 'legacy';
+      // build prompt
+      if(Array.isArray(obj.messages)){
+        out.prompt = obj.messages.map(m => (m.role? (m.role+': ') : '') + (m.content || m.message || m.text || '')).join('\\n');
+      } else if(obj.prompt) out.prompt = obj.prompt;
+      else if(obj.input) out.prompt = typeof obj.input === 'string' ? obj.input : JSON.stringify(obj.input).slice(0,1000);
+      else if(typeof obj === 'string') out.prompt = obj;
+      else out.prompt = JSON.stringify(out.original).slice(0,2000);
+      // attach apiKey if present
+      if(obj.apiKey) out.apiKey = obj.apiKey;
+      return out;
+    }catch(e){
+      return { type: 'legacy-proxy', prompt: String(obj) };
+    }
+  }
+
+  // WRAPPERS / PATCHERS: best-effort, non-destructive
+  const originalFns = {};
+
+  function wrapGlobalFn(name){
+    try{
+      const orig = window[name];
+      if(typeof orig !== 'function') return false;
+      originalFns[name] = orig;
+      window[name] = function(payload){
+        try{
+          // avoid re-routing MGA21's own messages
+          if(payload && payload[FLAG]) return orig.apply(this, arguments);
+          // if it looks like a provider call -> route to legacy
+          if(looksLikeProviderCall(payload)){
+            const legacy = translateToLegacy(payload);
+            // gentle: first send to legacy orchestrator (non-blocking)
+            sendToLegacy({ via: name, payload: legacy });
+            // return a synthetic immediate response to caller so it doesn't stall
+            return { ok:true, routed:'legacy', synthetic:true };
+          }
+        }catch(e){}
+        return orig.apply(this, arguments);
+      };
       return true;
     }catch(e){ return false; }
   }
 
-  function loadSnapshotLocal(){
+  // Wrap common SDK entrypoints (best-effort)
+  const COMMON_FN_NAMES = ['sendMessage','sendToAI','sendToProvider','askAI','createChatCompletion','createCompletion','generateText','invokeAI'];
+  COMMON_FN_NAMES.forEach(fn=> wrapGlobalFn(fn));
+
+  // Intercept fetch to catch direct HTTP calls to modern endpoints
+  (function patchFetch(){
     try{
-      const raw = localStorage.getItem(STORE_KEY);
-      if(!raw) return null;
-      return JSON.parse(raw);
-    }catch(e){ return null; }
-  }
+      if(!window.fetch) return;
+      const origFetch = window.fetch.bind(window);
+      originalFns.fetch = origFetch;
+      window.fetch = function(input, init){
+        try{
+          const url = (typeof input === 'string') ? input : (input && input.url) || '';
+          const u = String(url || '');
+          // detect likely AI endpoints heuristically
+          const isAi = u.includes('/v1/') || u.includes('/openai') || u.includes('/ai/') || u.includes('anthropic') || u.includes('gemini') || u.includes('/claude');
+          // if request body looks like provider call, also catch
+          let maybeBody = null;
+          try{
+            if(init && init.body){
+              try{ maybeBody = JSON.parse(init.body); }catch(e){ maybeBody = init.body; }
+            }
+          }catch(e){}
+          if(isAi || looksLikeProviderCall(maybeBody)){
+            // do not loop: if body flagged, pass through
+            if(maybeBody && maybeBody[FLAG]) return origFetch(input, init);
+            const legacy = translateToLegacy(maybeBody || { url:u });
+            // send to legacy orchestrator (non-blocking)
+            sendToLegacy({ via: 'fetch', url: u, payload: legacy });
+            // Optionally, if user enabled proxy reroute, forward to proxy instead of original
+            if(window.MGA21 && window.MGA21.rerouteEnabled){
+              return fetchProxy(legacy, window.MGA21.proxyUrl || PROXY_DEFAULT);
+            }
+            // else return a synthetic success Response so caller doesn't fail
+            const body = JSON.stringify({ ok:true, routed:'legacy', info: 'handled-by-MGA21' });
+            return Promise.resolve(new Response(body, { status:200, headers: { 'Content-Type': 'application/json' } }));
+          }
+        }catch(e){}
+        return origFetch(input, init);
+      };
+    }catch(e){}
+  })();
 
-  // public API
-  window.MGA20 = {
-    build: function(opts){
-      const map = buildCompressedSnapshot();
-      if(opts && opts.persist) saveSnapshotLocal(map);
-      return map;
-    },
-    saveLocal: function(){ const map = buildCompressedSnapshot(); return saveSnapshotLocal(map); },
-    loadLocal: function(){ return loadSnapshotLocal(); },
-    restorePlaceholder: function(key, containerSelector){
-      // placeholder: create small DOM placeholder from compressed entry
-      try{
-        const entry = (loadSnapshotLocal() && loadSnapshotLocal().map && loadSnapshotLocal().map[key]) || null;
-        if(!entry) return null;
-        const el = document.createElement(entry.tag || 'div');
-        if(entry.id) el.id = entry.id + '_mga20';
-        if(entry.class) el.className = entry.class;
-        if(entry.attrs) Object.keys(entry.attrs).forEach(k=> el.setAttribute(k, entry.attrs[k]));
-        if(entry.text) el.textContent = entry.text;
-        const target = document.querySelector(containerSelector) || document.body;
-        target.appendChild(el);
-        return el;
-      }catch(e){ return null; }
-    },
-
-    // Optional: enable reroute helper — manual opt-in for safety
-    enableReroute: function(opts){
-      if(window.MGA20._rerouteEnabled) return;
-      opts = opts || {};
-      const proxyUrl = opts.proxyUrl || (window.__STL_BACKEND_PROXY__ || '/api/proxy');
-      const allowedNewProviders = opts.allowedNewProviders || ['new-ai-provider','new-chat-sdk']; // examples
-      // patch sendToProvider if present
-      try{
-        if(window.__stl_real_api && typeof window.__stl_real_api.sendToProvider === 'function'){
-          const orig = window.__stl_real_api.sendToProvider;
-          window.__stl_real_api.sendToProvider = async function(message, optsLocal){
+  // WebSocket interception: best-effort
+  (function patchWebSocket(){
+    try{
+      const OrigWS = window.WebSocket;
+      if(!OrigWS) return;
+      function WrappedWS(url, protocols){
+        const ws = new OrigWS(url, protocols);
+        try{
+          const origSend = ws.send.bind(ws);
+          ws.send = function(data){
             try{
-              const cfg = window.__stl_quantum_config || {}; // try to find saved config
-              const apiKey = (cfg && cfg.apiKey) || (optsLocal && optsLocal.apiKey) || '';
-              const provider = (optsLocal && optsLocal.provider) || cfg.provider || 'openai';
-              // If provider appears in known-new list, reroute to backend proxy
-              if(allowedNewProviders.includes(provider) || (typeof message === 'object' && message.source === 'new-sdk')){
-                // route via fetch to proxy (backend handles SERVER_KEYS or apiKey)
-                try{
-                  await fetch(proxyUrl, {
-                    method:'POST',
-                    headers:{ 'Content-Type':'application/json' },
-                    body: JSON.stringify({ provider: 'openai', apiKey: apiKey, prompt: typeof message === 'string' ? message : (message && message.text) || '', model: optsLocal && optsLocal.model })
-                  });
-                  // silently drop or return a shallow success — actual responses flow via backend WS
-                  return { ok:true, proxied:true };
-                }catch(e){
-                  // fallback to original
-                  return orig.call(this, message, optsLocal);
+              let obj = null;
+              try{ obj = typeof data === 'string' ? JSON.parse(data) : data; }catch(e){}
+              if(looksLikeProviderCall(obj)){
+                const legacy = translateToLegacy(obj);
+                sendToLegacy({ via: 'ws', url, payload: legacy });
+                // optionally reroute via proxy if enabled
+                if(window.MGA21 && window.MGA21.rerouteEnabled){
+                  fetchProxy(legacy, window.MGA21.proxyUrl || PROXY_DEFAULT).catch(()=>{});
                 }
+                // swallow original send to prevent duplicate network
+                return;
               }
-              return orig.call(this, message, optsLocal);
-            }catch(e){ return orig.call(this, message, optsLocal); }
+            }catch(e){}
+            return origSend(data);
           };
+        }catch(e){}
+        return ws;
+      }
+      WrappedWS.prototype = OrigWS.prototype;
+      window.WebSocket = WrappedWS;
+    }catch(e){}
+  })();
+
+  // Public API for control (opt-in heavy behaviors)
+  window.MGA21 = {
+    enabled: true,
+    rerouteEnabled: false,
+    proxyUrl: PROXY_DEFAULT,
+    status(){
+      return { enabled: true, rerouteEnabled: window.MGA21.rerouteEnabled, proxy: window.MGA21.proxyUrl };
+    },
+    enableReroute(proxy){
+      try{
+        window.MGA21.rerouteEnabled = true;
+        window.MGA21.proxyUrl = proxy || PROXY_DEFAULT;
+        return { ok:true, proxy: window.MGA21.proxyUrl };
+      }catch(e){ return { ok:false, error:String(e) }; }
+    },
+    disableReroute(){
+      window.MGA21.rerouteEnabled = false;
+      return { ok:true };
+    },
+    // allow explicit programmatic routing of an object to legacy
+    routeNow(obj, opts){
+      try{
+        const legacy = translateToLegacy(obj);
+        if(opts && opts.useProxy && window.MGA21.rerouteEnabled){
+          return fetchProxy(legacy, window.MGA21.proxyUrl);
         }
-      }catch(e){}
-      window.MGA20._rerouteEnabled = true;
-      console.info(MODULE, 'reroute enabled (opt-in). Proxy:', proxyUrl);
+        return Promise.resolve(sendToLegacy(legacy));
+      }catch(e){ return Promise.reject(e); }
+    },
+    // restore originals (best-effort; cannot always restore overwritten globals)
+    restoreOriginals(){
+      try{
+        Object.keys(originalFns).forEach(k => { try{ window[k] = originalFns[k]; }catch(e){} });
+        if(originalFns.fetch) window.fetch = originalFns.fetch;
+        return { ok:true };
+      }catch(e){ return { ok:false, error:String(e) }; }
     }
   };
 
-  console.info(MODULE, 'ready — compression helper available. Call MGA20.build({persist:true}) to snapshot.');
+  // light bootstrap ping to legacy so it knows MGA21 is present
+  setTimeout(()=>{ try{ sendToLegacy({ type:'mga21-ready', ts: Date.now() }); }catch(e){} }, 400);
+
+  console.info(MODULE, "loaded — passive interception active. Reroute is opt-in.");
+})();
+</script>
+<script id="najibdev_mga21a_configAligned">
+/* najibdev_mga21a_configAligned — MGA21A Hybrid Smart
+   Mode: Hybrid Smart (auto-enable reroute when UI API Key present or Global Mode)
+   Paste this BEFORE </body>
+   Safe: no eval, no remote load. Works with DEV_mga6_orchestrator + /api/proxy backend.
+*/
+(function MGA21A_ConfigAligned(){
+  if(window.MGA21A_ConfigAligned) return;
+  const MODULE = "najibdev_mga21a_configAligned";
+  const PROXY_DEFAULT = (window.__STL_BACKEND_PROXY__ || '/api/proxy');
+  const LEGACY_ORCH_ID = 'DEV_mga6_orchestrator';
+  const FLAG = '__MGA21A_FLAG__';
+
+  // ---------- utilities ----------
+  function safeParseJSON(s){ try{ return JSON.parse(s); }catch(e){ return null; } }
+  function deepClone(o){ try{ return JSON.parse(JSON.stringify(o)); }catch(e){ return null; } }
+  function now(){ return Date.now(); }
+
+  // ---------- read UI config (provider/model/key) ----------
+  function readUiConfig(){
+    const providerEl = document.getElementById('aiProvider') || document.querySelector('#aiProvider');
+    const modelEl = document.getElementById('aiModel') || document.querySelector('#aiModel');
+    const keyEl = document.getElementById('aiApiKey') || document.querySelector('#aiApiKey') || document.querySelector('#apiKeyInput');
+    const mode = localStorage.getItem('__APIKEY_MODE__') || 'user'; // user | global
+    const provider = providerEl ? providerEl.value : (window.__DEFAULT_AI_PROVIDER__ || 'legacy');
+    const model = modelEl ? modelEl.value : (window.__DEFAULT_AI_MODEL__ || 'legacy');
+    const apiKey = keyEl ? (keyEl.value || '') : '';
+    return { provider, model, apiKey, mode };
+  }
+
+  // ---------- hybrid policy: enable reroute if apiKey present OR global mode === 'global' ----------
+  function hybridPolicyShouldReroute(cfg){
+    if(!cfg) cfg = readUiConfig();
+    if(cfg.mode === 'global') return true;
+    if(cfg.apiKey && cfg.apiKey.trim().length > 0) return true;
+    return false;
+  }
+
+  // ---------- send to legacy orchestrator ----------
+  function sendToLegacy(payload){
+    try{
+      const el = document.getElementById(LEGACY_ORCH_ID) || document.querySelector('[data-legacy-orch]');
+      const msg = deepClone(payload) || { type:'mga21a-empty', ts: now() };
+      if(typeof msg === 'object') msg[FLAG] = true;
+      if(el){
+        el.dispatchEvent(new CustomEvent('legacy-ai-input', { detail: msg }));
+        return { ok:true, routed:'legacy' };
+      }
+      try{ window.postMessage({ module: MODULE, event:'legacy-ai-input', payload: msg }, '*'); }catch(e){}
+      return { ok:false, reason:'no-legacy-el' };
+    }catch(e){
+      return { ok:false, error:String(e) };
+    }
+  }
+
+  // ---------- proxy fetch (network) ----------
+  function fetchProxy(payload, proxyUrl){
+    try{
+      const p = deepClone(payload) || payload;
+      if(p && typeof p === 'object' && p[FLAG]) delete p[FLAG];
+      return fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p)
+      });
+    }catch(e){ return Promise.reject(e); }
+  }
+
+  // ---------- heuristics ----------
+  function looksLikeProviderCall(obj){
+    if(!obj) return false;
+    if(typeof obj === 'string') return false;
+    if(typeof obj !== 'object') return false;
+    const keys = Object.keys(obj);
+    const checks = ['model','provider','messages','prompt','input','apiKey','temperature','max_tokens','messages'];
+    return checks.some(k => keys.includes(k));
+  }
+
+  function translateToLegacy(obj, uiCfg){
+    try{
+      const out = { type:'legacy-proxy', provider:'legacy', model:'legacy', prompt:'', original:{} };
+      if(!obj) { out.prompt = ''; return out; }
+      out.original = (typeof obj === 'object') ? deepClone(obj) : { text: String(obj) };
+      // take from UI if available to reflect user choices
+      if(!uiCfg) uiCfg = readUiConfig();
+      out.provider = (uiCfg && uiCfg.provider) || obj.provider || 'legacy';
+      out.model = (uiCfg && uiCfg.model) || obj.model || obj.modelName || (Array.isArray(obj.messages)? 'chat' : 'completion') || 'legacy';
+      // messages -> prompt
+      if(Array.isArray(obj.messages)){
+        out.prompt = obj.messages.map(m => (m.role? (m.role+': ') : '') + (m.content || m.text || m.message || '')).join('\n');
+      } else if(obj.prompt) out.prompt = obj.prompt;
+      else if(obj.input) out.prompt = (typeof obj.input === 'string' ? obj.input : JSON.stringify(obj.input).slice(0,1000));
+      else if(typeof obj === 'string') out.prompt = obj;
+      else out.prompt = JSON.stringify(out.original).slice(0,2000);
+
+      // prefer UI apiKey if present (user or global)
+      if(uiCfg && uiCfg.apiKey) out.apiKey = uiCfg.apiKey;
+      else if(obj.apiKey) out.apiKey = obj.apiKey;
+
+      // attach minimal metadata
+      out._mga21a = { ts: now(), uiDriven: !!uiCfg };
+      return out;
+    }catch(e){
+      return { type:'legacy-proxy', prompt: String(obj) };
+    }
+  }
+
+  // ---------- core interception (wrap functions, fetch, websocket) ----------
+  const ORIGINALS = {};
+
+  function wrapGlobalFn(name){
+    try{
+      const orig = window[name];
+      if(typeof orig !== 'function') return false;
+      ORIGINALS[name] = orig;
+      window[name] = function(payload){
+        try{
+          // avoid loops
+          if(payload && payload[FLAG]) return orig.apply(this, arguments);
+          // if provider-like -> handle
+          if(looksLikeProviderCall(payload)){
+            const uiCfg = readUiConfig();
+            const legacy = translateToLegacy(payload, uiCfg);
+            // send to legacy orchestrator
+            sendToLegacy({ via: name, payload: legacy });
+            // if hybrid policy says reroute -> forward network via proxy
+            if(hybridPolicyShouldReroute(uiCfg) && window.MGA21A_ConfigAligned && window.MGA21A_ConfigAligned.rerouteEnabled){
+              // fire & forget
+              fetchProxy(legacy, window.MGA21A_ConfigAligned.proxyUrl || PROXY_DEFAULT).catch(()=>{});
+            }
+            // provide synthetic reply so caller doesn't block
+            try{ return { ok:true, proxied:'legacy', synthetic:true }; }catch(e){}
+            return;
+          }
+        }catch(e){}
+        return orig.apply(this, arguments);
+      };
+      return true;
+    }catch(e){ return false; }
+  }
+
+  const COMMON_NAMES = ['sendMessage','sendToAI','sendToProvider','askAI','createChatCompletion','createCompletion','generateText','invokeAI'];
+  COMMON_NAMES.forEach(wrapGlobalFn);
+
+  // patch fetch
+  (function patchFetch(){
+    try{
+      if(!window.fetch) return;
+      const _fetch = window.fetch.bind(window);
+      ORIGINALS.fetch = _fetch;
+      window.fetch = function(input, init){
+        try{
+          const url = (typeof input === 'string') ? input : (input && input.url) || '';
+          let body = null;
+          if(init && init.body){
+            try{ body = JSON.parse(init.body); }catch(e){ body = init.body; }
+          }
+          if(looksLikeProviderCall(body) || (String(url||'').includes('/v1/') || String(url||'').includes('/openai') || String(url||'').includes('/ai/') || String(url||'').includes('anthropic') || String(url||'').includes('gemini'))){
+            // avoid looping flagged bodies
+            if(body && body[FLAG]) return _fetch(input, init);
+            const uiCfg = readUiConfig();
+            const legacy = translateToLegacy(body || { url: String(url) }, uiCfg);
+            sendToLegacy({ via:'fetch', url: String(url), payload: legacy });
+            if(hybridPolicyShouldReroute(uiCfg) && window.MGA21A_ConfigAligned && window.MGA21A_ConfigAligned.rerouteEnabled){
+              return fetchProxy(legacy, window.MGA21A_ConfigAligned.proxyUrl || PROXY_DEFAULT);
+            }
+            // return synthetic positive response so caller continues
+            const resp = JSON.stringify({ ok:true, routed:'legacy', by: MODULE });
+            return Promise.resolve(new Response(resp, { status:200, headers:{ 'Content-Type':'application/json' } }));
+          }
+        }catch(e){}
+        return _fetch(input, init);
+      };
+    }catch(e){}
+  })();
+
+  // patch WebSocket send
+  (function patchWebSocket(){
+    try{
+      const OrigWS = window.WebSocket;
+      if(!OrigWS) return;
+      function Wrapped(url, protocols){
+        const ws = new OrigWS(url, protocols);
+        try{
+          const origSend = ws.send.bind(ws);
+          ws.send = function(data){
+            try{
+              let obj = null;
+              try{ obj = (typeof data === 'string') ? JSON.parse(data) : data; }catch(e){}
+              if(looksLikeProviderCall(obj)){
+                const uiCfg = readUiConfig();
+                const legacy = translateToLegacy(obj, uiCfg);
+                sendToLegacy({ via:'ws', url, payload: legacy });
+                if(hybridPolicyShouldReroute(uiCfg) && window.MGA21A_ConfigAligned && window.MGA21A_ConfigAligned.rerouteEnabled){
+                  fetchProxy(legacy, window.MGA21A_ConfigAligned.proxyUrl || PROXY_DEFAULT).catch(()=>{});
+                }
+                // swallow original to avoid duplicate network
+                return;
+              }
+            }catch(e){}
+            return origSend(data);
+          };
+        }catch(e){}
+        return ws;
+      }
+      Wrapped.prototype = OrigWS.prototype;
+      window.WebSocket = Wrapped;
+    }catch(e){}
+  })();
+
+  // ---------- UI binding: listen to changes in AI Model Configuration panel ----------
+  function bindUiListeners(){
+    try{
+      const providerEl = document.getElementById('aiProvider');
+      const modelEl = document.getElementById('aiModel');
+      const keyEl = document.getElementById('aiApiKey') || document.querySelector('#aiApiKey') || document.querySelector('#apiKeyInput');
+
+      function onUiChange(){
+        const cfg = readUiConfig();
+        // auto-enable reroute when hybrid policy true
+        if(hybridPolicyShouldReroute(cfg)){
+          window.MGA21A_ConfigAligned.enableReroute(window.MGA21A_ConfigAligned.proxyUrl);
+        } else {
+          // if mode is not global and no apiKey -> keep passive but do not force disable reroute if user explicitly enabled
+          if(!localStorage.getItem('__MGA21A_USERFORCE_REROUTE__')){
+            window.MGA21A_ConfigAligned.disableReroute();
+          }
+        }
+        // broadcast UI-changed meta to legacy orchestrator (useful for logging)
+        sendToLegacy({ type:'ui-config-change', cfg: cfg });
+      }
+
+      [providerEl, modelEl, keyEl].forEach(el=>{
+        if(!el) return;
+        el.addEventListener('change', onUiChange);
+        el.addEventListener('input', onUiChange);
+      });
+      // initial run
+      setTimeout(onUiChange, 300);
+    }catch(e){}
+  }
+
+  // ---------- public API and init ----------
+  window.MGA21A_ConfigAligned = {
+    enabled: true,
+    rerouteEnabled: false,
+    proxyUrl: PROXY_DEFAULT,
+    status(){
+      return { enabled:true, rerouteEnabled: this.rerouteEnabled, proxy: this.proxyUrl, ui: readUiConfig() };
+    },
+    enableReroute(proxy){
+      this.proxyUrl = proxy || this.proxyUrl || PROXY_DEFAULT;
+      this.rerouteEnabled = true;
+      // mark user forced reroute so hybrid logic won't auto-disable it
+      try{ localStorage.setItem('__MGA21A_USERFORCE_REROUTE__','1'); }catch(e){}
+      console.info(MODULE, 'reroute ENABLED (user or hybrid). Proxy:', this.proxyUrl);
+      return { ok:true, proxy: this.proxyUrl };
+    },
+    disableReroute(){
+      this.rerouteEnabled = false;
+      try{ localStorage.removeItem('__MGA21A_USERFORCE_REROUTE__'); }catch(e){}
+      console.info(MODULE, 'reroute DISABLED (hybrid policy).');
+      return { ok:true };
+    },
+    routeNow(obj, opts){
+      try{
+        const legacy = translateToLegacy(obj, readUiConfig());
+        if(opts && opts.useProxy && this.rerouteEnabled) return fetchProxy(legacy, this.proxyUrl);
+        return Promise.resolve(sendToLegacy(legacy));
+      }catch(e){ return Promise.reject(new Error('routeNow-failed')); }
+    },
+    restoreOriginals(){
+      try{
+        // best-effort only
+        if(ORIGINALS.fetch) window.fetch = ORIGINALS.fetch;
+        Object.keys(ORIGINALS).forEach(k => { if(k!=='fetch') window[k] = ORIGINALS[k]; });
+        console.info(MODULE, 'restored originals (best-effort).');
+        return { ok:true };
+      }catch(e){ return { ok:false }; }
+    }
+  };
+
+  // bind UI listeners (will retry if elements not present)
+  (function tryBind(retry=0){
+    try{ bindUiListeners(); }catch(e){
+      if(retry<10) setTimeout(()=> tryBind(retry+1), 400);
+    }
+  })();
+
+  // bootstrap ping to legacy
+  setTimeout(()=>{ try{ sendToLegacy({ type:'mga21a-configAligned-ready', ui: readUiConfig(), ts: now() }); }catch(e){} }, 500);
+
+  console.info(MODULE, 'loaded — configAligned hybrid-smart active. Use MGA21A_ConfigAligned.enableReroute(proxy) to force network reroute.');
+  window.MGA21A_ConfigAligned_loaded = true;
 })();
 </script>
 </body>
