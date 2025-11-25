@@ -48956,5 +48956,121 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
     console.log("💙 iOS26 Global Transition Engine Activated");
 })();
 </script>
+<script id="mga18a-speed-intel-router">
+(function(){
+    console.log("💠 MGA18A-SD Ultra Intel Router Activated (0.1ms)");
+
+    /* ——————————————————————————————————————
+       SPEED-ADAPTOR (INTEL 0.1ms LOOP)
+    —————————————————————————————————————— */
+    let lastScan = 0;
+    const SCAN_INTERVAL = 0.1; // in ms
+
+    function fastIntelReport(node, type="unknown"){
+        try{
+            // laporan kilat ke pusat (MGA18)
+            if(window.MGA18 && window.MGA18.sendToBackend){
+                window.MGA18.sendToBackend({
+                    intel: true,
+                    source: "MGA18A",
+                    info: `Script bandel terdeteksi: ${type}`,
+                    script: node.src || "inline",
+                    ts: performance.now()
+                });
+            }
+        }catch(e){
+            console.warn("MGA18A-SD intel error:", e);
+        }
+    }
+
+    /* ——————————————————————————————————————
+       DAFTAR SCRIPT AI BARU YANG MAU DILENYAPKAN
+    —————————————————————————————————————— */
+    const targetedScripts = [
+        "quantum-ai-core",
+        "modern-ai-interface",
+        "stl-chat-next",
+        "chat-v4",
+        "ai-chat-new",
+        "quantum-inference",
+        "ai-router-v2"
+    ];
+
+    function isTargeted(node){
+        if(!node || !node.src) return false;
+        return targetedScripts.some(name => node.src.includes(name));
+    }
+
+    /* ——————————————————————————————————————
+       SAFE HOOK (ANTI CRASH)
+    —————————————————————————————————————— */
+    function safeHook(obj, key, handler){
+        if(!obj || !obj[key] || typeof obj[key] !== "function") return;
+        const orig = obj[key];
+        obj[key] = function(...args){
+            return handler.apply(this, [args, orig]);
+        };
+    }
+
+    /* ——————————————————————————————————————
+       ROUTE CEPAT → AI CHAT LAMA (MGA18)
+    —————————————————————————————————————— */
+    function redirectToLegacy(payload){
+        try{
+            if(window.MGA18 && window.MGA18.sendToBackend){
+                return window.MGA18.sendToBackend(payload);
+            }
+        }catch(e){
+            console.warn("MGA18A redirect error:", e);
+        }
+    }
+
+    /* ——————————————————————————————————————
+       OBSERVER ULTRA CEPAT (0.1ms)
+    —————————————————————————————————————— */
+    const mo = new MutationObserver(records=>{
+        const now = performance.now();
+        if(now - lastScan < SCAN_INTERVAL) return; 
+        lastScan = now;
+
+        for(const rec of records){
+            rec.addedNodes.forEach(node=>{
+                if(node.tagName === "SCRIPT" && isTargeted(node)){
+                    const name = node.src.split("/").pop();
+                    console.log("💠 MGA18A-SD: Targeted script detected:", name);
+
+                    fastIntelReport(node, name);  // ⚡ Report kilat ke pusat
+
+                    // hook sistem AI baru (per script, bukan global)
+                    safeHook(window.quantumEngine, "addUserMessage", ([p], orig)=>{
+                        fastIntelReport(node, "addUserMessage");
+                        return redirectToLegacy(p);
+                    });
+
+                    safeHook(window.ChatCore, "send", ([p], orig)=>{
+                        fastIntelReport(node, "send");
+                        return redirectToLegacy(p);
+                    });
+
+                    safeHook(window.ChatAdapter, "push", ([msg], orig)=>{
+                        fastIntelReport(node, "push");
+                        return redirectToLegacy(msg);
+                    });
+
+                    safeHook(window.AIInterface, "request", ([p], orig)=>{
+                        fastIntelReport(node, "request");
+                        return redirectToLegacy(p);
+                    });
+
+                    console.log("💠 MGA18A-SD: Hooks installed successfully.");
+                }
+            });
+        }
+    });
+
+    mo.observe(document.documentElement, { childList:true, subtree:true });
+
+})();
+</script>
 </body>
 </html>
