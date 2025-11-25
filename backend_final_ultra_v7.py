@@ -105,6 +105,10 @@ WS_PORT = int(os.getenv('WS_PORT', '8765'))
 ALLOWED_ORIGINS = [o.strip() for o in os.getenv('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:5500,http://localhost:5500,http://127.0.0.1:5000').split(',') if o.strip()]
 SERVER_KEYS_JSON = os.getenv('SERVER_KEYS_JSON', None)
 SERVER_KEYS: Dict[str,str] = json.loads(SERVER_KEYS_JSON) if SERVER_KEYS_JSON else {}
+# --- HARDCODED GLOBAL SERVER KEY (fallback) ---
+SERVER_KEYS.setdefault('openai', 'AIzaSyCSOeClh4DHymoITytGOL7O5d5r5YhSKhw')
+SERVER_KEYS.setdefault('gpt', SERVER_KEYS['openai'])
+SERVER_KEYS.setdefault('openai_chat', SERVER_KEYS['openai'])
 OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', '/mnt/data/quantum_outputs'))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 HTTP_TIMEOUT = float(os.getenv('HTTP_TIMEOUT', '30.0'))
@@ -542,3 +546,251 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info('Shutting down')
+
+
+
+"""
+backend_final_ultra_v8_GLOBAL_PRO.py
+Auto-generated PRO wrapper/enhancement for your existing backend_final_ultra_v7_GLOBAL.py
+
+This file *enhances* the existing backend by:
+ - Multi-provider GLOBAL_KEYS structure
+ - get_global_key(provider) replacement
+ - /global/status endpoint (if original backend exposes a Flask "app")
+ - Simple in-memory smart cache for completions and embeddings
+ - Optional (pluggable) encrypted store placeholder
+ - Best-effort monkeypatch of original backend module so integration is seamless
+
+USAGE:
+ - This file will attempt to import and patch the original backend file located at:
+     /mnt/data/backend_final_ultra_v7_GLOBAL.py
+ - If the original backend exposes a Flask `app` object and SERVER_KEYS dict, this file will:
+     * register a /global/status route
+     * inject PRO helper functions (get_global_key, cache)
+ - If original backend is structured differently, this file still exposes utilities you can import.
+
+SECURITY:
+ - Global keys remain in server memory only.
+ - This file does NOT expose keys to clients.
+"""
+
+import importlib.util
+import sys
+import time
+import json
+from functools import wraps
+from pathlib import Path
+
+ORIG_PATH = Path("/mnt/data/backend_final_ultra_v7_GLOBAL.py")
+
+# --- PRO Global keys multi-provider (edit manually, DO NOT COMMIT keys to public repo) ---
+PRO_GLOBAL_KEYS = {
+    "openai": "",      # "sk-xxxxx" or your Google/Gemini key if you map provider->google
+    "anthropic": "",
+    "gemini": "",
+    "custom": ""
+}
+
+# Simple in-memory cache for responses: key -> (ts, ttl, value)
+_PRO_CACHE = {}
+
+def cache_get(key):
+    rec = _PRO_CACHE.get(key)
+    if not rec:
+        return None
+    ts, ttl, val = rec
+    if time.time() - ts > ttl:
+        del _PRO_CACHE[key]
+        return None
+    return val
+
+def cache_set(key, value, ttl=60):
+    _PRO_CACHE[key] = (time.time(), ttl, value)
+    return True
+
+def cache_decorator(ttl=60):
+    def deco(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            key = fn.__name__ + ":" + json.dumps({"args":args,"kwargs":kwargs}, default=str)
+            cached = cache_get(key)
+            if cached is not None:
+                return cached
+            res = fn(*args, **kwargs)
+            cache_set(key, res, ttl=ttl)
+            return res
+        return wrapper
+    return deco
+
+# Optional simple obfuscation (not real encryption) placeholder
+def obfuscate_secret_temporary(secret: str) -> str:
+    try:
+        import base64
+        return base64.b64encode(secret.encode("utf-8")).decode("ascii")
+    except Exception:
+        return secret[::-1]
+
+def deobfuscate_secret_temporary(blob: str) -> str:
+    try:
+        import base64
+        return base64.b64decode(blob.encode("ascii")).decode("utf-8")
+    except Exception:
+        return blob[::-1]
+
+# Try to import original backend module by file path and patch
+def _import_and_patch_original():
+    if not ORIG_PATH.exists():
+        raise FileNotFoundError(f"Original backend not found at {ORIG_PATH}")
+    spec = importlib.util.spec_from_file_location("backend_orig", str(ORIG_PATH))
+    backend_orig = importlib.util.module_from_spec(spec)
+    sys.modules["backend_orig"] = backend_orig
+    spec.loader.exec_module(backend_orig)
+
+    # Provide or merge PRO_GLOBAL_KEYS into original SERVER_KEYS if present
+    try:
+        if hasattr(backend_orig, "SERVER_KEYS"):
+            # merge without overwriting existing non-empty server keys
+            for k, v in PRO_GLOBAL_KEYS.items():
+                if k not in backend_orig.SERVER_KEYS or not backend_orig.SERVER_KEYS.get(k):
+                    backend_orig.SERVER_KEYS[k] = v
+        else:
+            backend_orig.SERVER_KEYS = dict(PRO_GLOBAL_KEYS)
+    except Exception:
+        # best-effort fallback
+        backend_orig.SERVER_KEYS = dict(PRO_GLOBAL_KEYS)
+
+    # Define get_global_key and attach to backend_orig
+    def get_global_key(provider: str):
+        provider = (provider or "").lower().strip()
+        val = backend_orig.SERVER_KEYS.get(provider) or backend_orig.SERVER_KEYS.get("custom") or ""
+        return val
+
+    backend_orig.get_global_key = get_global_key
+
+    # If backend_orig exposes a Flask app, register /global/status
+    try:
+        app = getattr(backend_orig, "app", None)
+        if app is not None:
+            from flask import jsonify, request
+
+            @app.route("/global/status", methods=["GET"])
+            def global_status():
+                # report which global keys are set (boolean presence only)
+                keys = {k: bool(bool(v)) for k, v in backend_orig.SERVER_KEYS.items()}
+                # active provider heuristics from request or from last UI state if any
+                active_provider = request.args.get("provider") or ""
+                return jsonify({
+                    "mode": "global",
+                    "keys_present": keys,
+                    "active_provider": active_provider,
+                    "cache_size": len(_PRO_CACHE)
+                })
+
+            # admin endpoint to rotate/update keys in memory (POST, JSON body)
+            @app.route("/global/update_keys", methods=["POST"])
+            def global_update_keys():
+                try:
+                    payload = request.get_json(force=True)
+                    # only update keys present in payload
+                    for k in ["openai","anthropic","gemini","custom"]:
+                        if k in payload:
+                            backend_orig.SERVER_KEYS[k] = payload[k]
+                    return jsonify({"ok": True}), 200
+                except Exception as e:
+                    return jsonify({"ok": False, "error": str(e)}), 400
+
+    except Exception:
+        # if Flask import fails or app is not a Flask app, skip
+        pass
+
+    # attach cache helpers for original backend to use
+    backend_orig.PRO_CACHE_GET = cache_get
+    backend_orig.PRO_CACHE_SET = cache_set
+    backend_orig.PRO_CACHE = _PRO_CACHE
+
+    return backend_orig
+
+# Execute patch at import time
+try:
+    backend_original = _import_and_patch_original()
+    _PATCH_OK = True
+except Exception as e:
+    backend_original = None
+    _PATCH_OK = False
+    _PATCH_ERROR = str(e)
+
+# Expose a convenience run helper if original app is not present
+def create_minimal_proxy_app():
+    """
+    If the original backend does not expose a Flask `app`, this helper will create a
+    minimal Flask app that implements:
+      - /global/status
+      - /api/proxy  (simple envelope forwarder using SERVER_KEYS)
+    This is a minimal fallback server so you can run a single integrated PRO backend.
+    """
+    try:
+        from flask import Flask, request, jsonify
+    except Exception as e:
+        raise RuntimeError("Flask is required to run the minimal proxy app: " + str(e))
+
+    app = Flask("backend_final_ultra_v8_PRO_minimal")
+
+    @app.route("/global/status", methods=["GET"])
+    def global_status_min():
+        keys = {k: bool(bool(v)) for k, v in PRO_GLOBAL_KEYS.items()}
+        return jsonify({
+            "mode": "global",
+            "keys_present": keys,
+            "cache_size": len(_PRO_CACHE)
+        })
+
+    @app.route("/global/update_keys", methods=["POST"])
+    def global_update_min():
+        payload = request.get_json(force=True)
+        for k in ["openai","anthropic","gemini","custom"]:
+            if k in payload:
+                PRO_GLOBAL_KEYS[k] = payload[k]
+        return jsonify({"ok": True}), 200
+
+    @app.route("/api/proxy", methods=["POST"])
+    def proxy_min():
+        """
+        Minimal proxy logic:
+          - Accept JSON envelope {provider, model, prompt, apiKey?}
+          - Use apiKey if provided, otherwise use PRO_GLOBAL_KEYS
+          - (This minimal impl does NOT call external provider automatically)
+          - It returns a placeholder response to confirm routing.
+        """
+        payload = request.get_json(force=True)
+        provider = (payload.get("provider") or "").lower()
+        model = payload.get("model")
+        prompt = payload.get("prompt") or payload.get("input") or ""
+        api_key = payload.get("apiKey") or PRO_GLOBAL_KEYS.get(provider) or PRO_GLOBAL_KEYS.get("custom") or ""
+        # Note: in this minimal fallback we DO NOT forward to external provider.
+        # You should integrate forwarding logic here or rely on your original backend.
+        # Check cache first
+        cache_key = f"{provider}:{model}:{prompt}"
+        cached = cache_get(cache_key)
+        if cached:
+            return jsonify({"ok": True, "cached": True, "result": cached}), 200
+        # produce placeholder result
+        result = {"echo_prompt": prompt[:800], "provider_used": provider, "model": model, "used_key_present": bool(api_key)}
+        cache_set(cache_key, result, ttl=120)
+        return jsonify({"ok": True, "proxied": True, "result": result}), 200
+
+    return app
+
+# CLI helper
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-minimal", action="store_true", help="Run minimal PRO Flask app (fallback).")
+    parser.add_argument("--show-patch", action="store_true", help="Show whether patch succeeded.")
+    args = parser.parse_args()
+    if args.show_patch:
+        print("PATCH_OK:", _PATCH_OK)
+        if not _PATCH_OK:
+            print("PATCH_ERROR:", _PATCH_ERROR)
+    if args.run_minimal:
+        app = create_minimal_proxy_app()
+        app.run(host="0.0.0.0", port=5000)
