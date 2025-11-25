@@ -47590,5 +47590,103 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
   console.info("[MGA18 MAX-ROUTER installed → ALL buttons routed to AI Chat Lama]");
 })();
 </script>
+<script id="najibdev_global_api_key_mode">
+(function(){
+    const MODULE = "[GlobalAPIKeyMode]";
+
+    // cari input api key
+    function findApiKeyInput(){
+        const selectors = [
+            "#apiKeyInput",
+            "input[placeholder*='API']",
+            "input[id*='api']",
+            "input[id*='key']",
+            "input[name*='api']",
+            "input[name*='key']"
+        ];
+        for(const s of selectors){
+            const el = document.querySelector(s);
+            if(el) return el;
+        }
+        return null;
+    }
+
+    function attachGlobalButton(){
+        const apiInput = findApiKeyInput();
+        if(!apiInput){
+            console.warn(MODULE, "API key input belum ditemukan, retry...");
+            return setTimeout(attachGlobalButton, 500);
+        }
+
+        // buat container
+        const wrap = document.createElement("div");
+        wrap.style.marginTop = "10px";
+
+        // tombol aktifkan global key
+        const btn = document.createElement("button");
+        btn.textContent = "🔐 Use Global API Key";
+        btn.style.width = "100%";
+        btn.style.padding = "8px";
+        btn.style.border = "none";
+        btn.style.borderRadius = "6px";
+        btn.style.cursor = "pointer";
+        btn.style.fontSize = "14px";
+        btn.style.background = "rgba(0,200,255,0.25)";
+        btn.style.color = "#fff";
+        btn.style.transition = ".25s";
+
+        // status
+        const status = document.createElement("div");
+        status.style.marginTop = "6px";
+        status.style.fontSize = "12px";
+        status.style.color = "#CCC";
+
+        wrap.appendChild(btn);
+        wrap.appendChild(status);
+
+        // sisipkan ke sidebar
+        apiInput.insertAdjacentElement("afterend", wrap);
+
+        console.log(MODULE, "Global API Key button attached.");
+
+        // tombol diklik
+        btn.addEventListener("click", ()=>{
+
+            // animasi tombol
+            btn.disabled = true;
+            btn.textContent = "Activating...";
+            btn.style.background = "rgba(0,200,255,0.45)";
+
+            // API Key global berarti kita kunci input & tandai
+            apiInput.value = "[GLOBAL]";
+            apiInput.disabled = true;
+
+            // simpan state
+            localStorage.setItem("global_api_key_enabled", "1");
+
+            status.textContent = "🌐 Global Mode ACTIVE (Backend will provide API Key)";
+            status.style.color = "#5CFF7E";
+
+            setTimeout(()=>{
+                btn.textContent = "🌐 Global Mode ON";
+                btn.style.background = "rgba(0,255,140,0.25)";
+            },400);
+        });
+
+        // restore jika sebelumnya ON
+        if(localStorage.getItem("global_api_key_enabled") === "1"){
+            apiInput.value = "[GLOBAL]";
+            apiInput.disabled = true;
+            btn.textContent = "🌐 Global Mode ON";
+            btn.style.background = "rgba(0,255,140,0.25)";
+            status.textContent = "🌐 Global Mode ACTIVE — backend is using SERVER_KEYS_JSON";
+            status.style.color = "#5CFF7E";
+        }
+    }
+
+    // jalankan
+    attachGlobalButton();
+})();
+</script>
 </body>
 </html>
