@@ -103,99 +103,178 @@
 <!-- DEV_najibdev_GlowCableAdapter13 -->
 <script id="DEV_najibdev_GlowCableAdapter13">
 (function(){
+    'use strict';
     if(window.DEV_najibdev_GlowCableAdapter13) return;
 
-    const MODULE_ID = "najibdev_glow_control_v2";
+    const ID = "najibdev_glow_control_v2";
+    const LOG = (...a)=>{ try{ console.info("[GlowAdapter13:visual-only]", ...a); }catch(e){} };
 
-    function whitelistToLazyLoader(){
-        const loader = window.najibdevStrongLazyLoader || window.najibdevStrongLazyLoaderV2;
-        if(loader && Array.isArray(loader.SAFE_LIST_IDS)){
-            if(!loader.SAFE_LIST_IDS.includes(MODULE_ID))
-                loader.SAFE_LIST_IDS.push(MODULE_ID);
-        }
-        if(Array.isArray(window.SAFE_LIST_IDS)){
-            if(!window.SAFE_LIST_IDS.includes(MODULE_ID))
-                window.SAFE_LIST_IDS.push(MODULE_ID);
-        }
+    // =====================================================
+    //     VISUAL GLOW INTENSITY ENGINE (MANDIRI)
+    // =====================================================
+
+    function applyGlowIntensity(level){
+        try{
+            const l = Math.max(0, Math.min(1, Number(level)||0));
+            document.documentElement.style.setProperty("--najibdev-glow-intensity", l);
+            LOG("Glow intensity set:", l);
+        }catch(e){}
     }
 
-    function adaptMotherGate(){
-        const mg = window.DEV_mga13_mother_gate;
-        if(!mg || !mg.accept) return;
-
-        const orig = mg.accept;
-        mg.accept = function(asset, opts){
-            try{
-                if(asset && (asset.id || "").includes(MODULE_ID)) {
-                    console.info("☑️ mga13 ACCEPT NajibDev Glow Control");
-                    return asset;
-                }
-            }catch(e){}
-            return orig(asset, opts);
-        };
+    // Automatisasi ringan: efek menyala sesuai fokus UI
+    function autoGlowEvents(){
+        try{
+            document.addEventListener("pointerdown", ()=> applyGlowIntensity(0.9));
+            document.addEventListener("pointerup", ()=> applyGlowIntensity(0.45));
+            document.addEventListener("mousemove", ()=> applyGlowIntensity(0.65));
+        }catch(e){}
     }
 
-    function adaptCableMaster(){
-        const cm = window.DEV_mga13c_cable_master;
-        if(!cm || !cm.evaluate) return;
+    // =====================================================
+    //   NO HOOK → TIDAK ADA INTEGRASI MG13 / MGA13C
+    // =====================================================
+    //   - Tidak whitelist ke lazy loader
+    //   - Tidak override mother_gate.accept
+    //   - Tidak override cable_master.evaluate
+    //   - Tidak membuka jalur AI Baru
+    //   - Murni VISUAL EFFECT only
+    // =====================================================
 
-        const origEval = cm.evaluate;
-        cm.evaluate = function(node){
-            if(node && (node.id || "").includes(MODULE_ID)){
-                return { ok:true, reason:"mga13c-najibdev-glow-override" };
-            }
-            return origEval(node);
-        };
-    }
-
-    function autoRegister(){
-        whitelistToLazyLoader();
-        adaptMotherGate();
-        adaptCableMaster();
-        console.log("🔌 NajibDev Glow Adapter wired into MG13 + Cable13c");
-    }
-
-    setTimeout(autoRegister, 300);
-
-    window.DEV_najibdev_GlowCableAdapter13 = {
-        id: MODULE_ID,
-        __meta:{ author:"najibdev", purpose:"glow-cable-adapter" }
+    const API = {
+        id: ID,
+        set: applyGlowIntensity,
+        auto: autoGlowEvents,
+        __meta:{ author:"najibdev", mode:"visual-only", aiHooks:false }
     };
+
+    try{
+        Object.defineProperty(window, "DEV_najibdev_GlowCableAdapter13", {
+            value: API, writable:false, configurable:false
+        });
+    }catch(e){
+        window.DEV_najibdev_GlowCableAdapter13 = API;
+    }
+
+    // Start visual engine
+    applyGlowIntensity(0.45);
+    autoGlowEvents();
+
+    LOG("GlowCableAdapter13 running in VISUAL-ONLY mode.");
 })();
 </script>
 <!-- DEV_najibdev_13Neutralizer (Override Soft untuk Mother Gate) -->
-<script id="DEV_najibdev_13Neutralizer">
+<script id="DEV_najibdev_13SuperNeutralizer">
 (function(){
-  if(window.DEV_najibdev_13Neutralizer) return;
+  if(window.DEV_najibdev_13SuperNeutralizer) return;
 
-  function neutralizeMotherGate(){
+  const LOG = (...a)=>{try{console.info("[SuperNeutralizer]",...a);}catch(e){}};
+  const SAFE = id => id && id.toLowerCase().includes("najibdev");
+
+  function hardKillMotherGate(){
     try{
       const mg = window.DEV_mga13_mother_gate;
       if(!mg) return;
 
-      // matikan auto-accept / auto-restore yg keras
-      if(mg.stop && typeof mg.stop === "function"){
-        mg.stop();
-      }
+      // stop all observers
+      try{ mg.stop && mg.stop(); }catch(e){}
 
-      // override accept supaya SELALU menerima script kamu
-      const orig = mg.accept;
+      // override accept → semua najibdev auto-lolos
+      const origAccept = mg.accept;
       mg.accept = function(asset, opts){
         try{
-          if(asset && asset.id && asset.id.toLowerCase().includes("najibdev")){
-            return asset; // langsung lolos
-          }
+          if(asset && SAFE(asset.id)) return asset;
         }catch(e){}
-        return orig ? orig(asset, opts) : asset;
+        return origAccept ? origAccept(asset, opts) : asset;
       };
+
+      // disable snapshot / restore
+      mg.snapshotCritical = function(){ return {}; };
+      mg.restoreLegacy = function(){ return null; };
+
+      // lock freeze
+      try{
+        Object.freeze(mg);
+        Object.seal(mg);
+      }catch(e){}
+
+      LOG("Mother Gate dinonaktifkan total.");
     }catch(e){}
   }
 
-  // tunda sedikit sampai mga13 siap
-  setTimeout(neutralizeMotherGate, 300);
+  function hardKillCableMaster(){
+    try{
+      const cm = window.DEV_mga13c_cable_master;
+      if(!cm) return;
 
-  window.DEV_najibdev_13Neutralizer = {
-    __meta:{author:"najibdev", patch:"13-neutralizer"}
+      // kill observers
+      try{ cm.stop && cm.stop(); }catch(e){}
+
+      // override everything jadi no-op
+      cm.evaluate = ()=>({ok:true,reason:"super-neutralized"});
+      cm.enqueue = ()=>{};
+      cm.processNow = ()=>{};
+      cm.wireNodeTo = ()=>true;
+
+      // freeze object
+      try{
+        Object.freeze(cm);
+        Object.seal(cm);
+      }catch(e){}
+
+      LOG("Cable Master dinonaktifkan total.");
+    }catch(e){}
+  }
+
+  function killThemeAdapter(){
+    try{
+      const ta = window.DEV_mga13_theme_adapter;
+      if(!ta) return;
+
+      ta.applyTheme = ()=>{};
+      ta.update = ()=>{};
+      try{
+        Object.freeze(ta);
+        Object.seal(ta);
+      }catch(e){}
+      LOG("Theme Adapter dibekukan.");
+    }catch(e){}
+  }
+
+  function permanentKillNewAI(){
+    try{
+      // blok reinjeksi script mga13/mga14 baru
+      const mo = new MutationObserver(muts=>{
+        muts.forEach(m=>{
+          m.addedNodes.forEach(n=>{
+            try{
+              if(!(n instanceof Element)) return;
+              const id = n.id || "";
+              if(/mga13|mga14/i.test(id)){
+                n.remove(); // langsung hapus
+                LOG("Blokir reinjeksi:", id);
+              }
+            }catch(e){}
+          });
+        });
+      });
+      mo.observe(document.documentElement,{childList:true,subtree:true});
+      LOG("Anti-reinject aktif.");
+    }catch(e){}
+  }
+
+  function activate(){
+    hardKillMotherGate();
+    hardKillCableMaster();
+    killThemeAdapter();
+    permanentKillNewAI();
+    LOG("Super Neutralizer AKTIF.");
+  }
+
+  // delay sedikit sampai mga13 / mga13c / theme_adapter dimuat
+  setTimeout(activate, 300);
+
+  window.DEV_najibdev_13SuperNeutralizer = {
+    __meta:{author:"najibdev",version:"3.0-super",intent:"legacy-max"}
   };
 })();
 </script>
@@ -204,309 +283,176 @@
 (function(){
   'use strict';
   if(window.DEV_mga13_mother_gate) return;
-  window.DEV_mga13_mother_gate = true;
 
-  const ID = 'DEV_mga13_mother_gate';
-  const LOG = (...a)=>{ try{ console.info('[DEV_mga13]', ...a); }catch(e){} };
-  const WARN = (...a)=>{ try{ console.warn('[DEV_mga13]', ...a); }catch(e){} };
+  const ID = "DEV_mga13_mother_gate";
 
-  // Small safe helpers
-  function qs(sel, root=document){ try{return root.querySelector(sel);}catch(e){return null;} }
-  function qsa(sel, root=document){ try{return Array.from((root||document).querySelectorAll(sel));}catch(e){return [];} }
-  function create(tag, attrs){ const el = document.createElement(tag); (attrs||{}).forEach; if(attrs) for(const k in attrs) try{ if(k==='text') el.textContent=attrs[k]; else el.setAttribute(k, String(attrs[k])); }catch(e){} return el; }
+  // --- Logging aman ---
+  const LOG  = (...a)=>{ try{ console.info("[mga13:legacy]", ...a);}catch(e){} };
+  const WARN = (...a)=>{ try{ console.warn("[mga13:legacy]", ...a);}catch(e){} };
 
-  // 1) Create / ensure safe gallery zone
+  // -------------------------------
+  //  1) SAFE GALLERY (dipertahankan tetapi tidak agresif)
+  // -------------------------------
   function ensureSafeGallery(){
-    let g = document.getElementById('mga13_safe_gallery');
+    let g = document.getElementById("mga13_safe_gallery");
     if(g) return g;
-    g = document.createElement('div');
-    g.id = 'mga13_safe_gallery';
-    g.setAttribute('data-origin', ID);
-    g.style.position = 'fixed';
-    g.style.right = '12px';
-    g.style.top = '12px';
-    g.style.zIndex = '2147483999';
-    g.style.maxWidth = '320px';
-    g.style.maxHeight = '60vh';
-    g.style.overflow = 'auto';
-    g.style.backdropFilter = 'blur(6px)';
-    g.style.background = 'rgba(0,0,0,0.18)';
-    g.style.borderRadius = '12px';
-    g.style.padding = '8px';
-    g.style.boxShadow = '0 6px 22px rgba(0,0,0,0.45)';
+    g = document.createElement("div");
+    g.id = "mga13_safe_gallery";
+    g.style.cssText = `
+      position:fixed; right:12px; top:12px;
+      z-index:2147483999; max-width:280px; max-height:55vh;
+      overflow:auto; padding:6px; border-radius:10px;
+      background:rgba(0,0,0,0.15); backdrop-filter:blur(6px);
+      font-family:system-ui; font-size:12px;
+      box-shadow:0 4px 18px rgba(0,0,0,0.35);
+    `;
     document.body.appendChild(g);
     return g;
   }
 
-  // 2) Try to register into lazy-loader SAFE_LIST_IDS (best-effort)
-  function tryWhitelistSelf(){
-    try{
-      const loader = window.najibdevStrongLazyLoader;
-      if(loader && Array.isArray(loader.SAFE_LIST_IDS) && !loader.SAFE_LIST_IDS.includes(ID)){
-        loader.SAFE_LIST_IDS.push(ID);
-        LOG('Whitelisted into najibdevStrongLazyLoader.SAFE_LIST_IDS');
-      }
-      // also check any global SAFE_LIST_IDS
-      if(Array.isArray(window.SAFE_LIST_IDS) && !window.SAFE_LIST_IDS.includes(ID)){
-        window.SAFE_LIST_IDS.push(ID);
-        LOG('Added to global SAFE_LIST_IDS');
-      }
-    }catch(e){ WARN('tryWhitelistSelf failed', e); }
-  }
-
-  // 3) Snapshot critical mga scripts so we can "protect" mga1-12 later
+  // -------------------------------
+  //  2) SNAPSHOT LEGACY MODULES ONLY
+  // -------------------------------
   const snapshot = {};
-  function snapshotCritical(ids){
-    ids = ids || [
-      'DEV_mga1_child_suite','DEV_mga2_child_suite','DEV_mga3_child_suite',
-      'DEV_mga4_najibchilddev','DEV_mga5_child_suite','DEV_mga6_orchestrator',
-      'najibdev-strong-lazy-loader','DEV_mg_najibdev','DEV_mg_MemoryCore'
-    ];
-    ids.forEach(id=>{
-      try{
-        const s = document.getElementById(id);
-        if(!s) return;
-        snapshot[id] = {
-          id: s.id,
-          text: s.textContent || '',
-          src: s.src || null,
-          type: s.type || null,
-          dataset: {...s.dataset}
-        };
-      }catch(e){}
+  const LEGACY_IDS = [
+    'DEV_mga1_child_suite',
+    'DEV_mga2_child_suite',
+    'DEV_mga3_child_suite',
+    'DEV_mga4_najibchilddev',
+    'DEV_mga5_child_suite',
+    'DEV_mga6_orchestrator',
+    'DEV_mg_najibdev',
+    'DEV_mg_MemoryCore'
+  ];
+
+  function snapshotCritical(){
+    LEGACY_IDS.forEach(id=>{
+      const s = document.getElementById(id);
+      if(!s) return;
+      snapshot[id] = {
+        id: s.id,
+        text: s.textContent||"",
+        type: s.type||"text/javascript"
+      };
     });
-    LOG('Snapshot taken for', Object.keys(snapshot).length, 'critical modules');
+    LOG("Snapshot legacy OK:", Object.keys(snapshot).length);
   }
 
-  // 4) Sanitize helpers - prefer existing sanitizer (DOMPurify / DEV_GlobalSanitizer)
-  function sanitizeHtml(html){
+  // -------------------------------
+  //  3) RESTORE LEGACY ONLY (NO NEW MODULE RESTORE)
+  // -------------------------------
+  function restoreLegacy(id){
     try{
-      if(window.DEV_Sanitize && typeof window.DEV_Sanitize === 'function'){
-        return window.DEV_Sanitize(html);
-      }
-      if(window.DOMPurify && typeof DOMPurify.sanitize === 'function'){
-        return DOMPurify.sanitize(html);
-      }
-      // fallback: very small whitelist escape
-      return String(html).replace(/<\s*script/gi,'&lt;script').replace(/on\w+\=/gi,'data-on-removed=');
-    }catch(e){ WARN('sanitizeHtml fallback', e); return html; }
+      const data = snapshot[id];
+      if(!data) return;
+      const s = document.createElement("script");
+      s.id = data.id + "_restored_legacy";
+      s.type = data.type;
+      s.textContent = data.text;
+      document.head.appendChild(s);
+      LOG("Restored legacy:", id);
+    }catch(e){
+      WARN("Restore failed:", id, e);
+    }
   }
 
-  // 5) Safe accept for image-like items (url/string | Element | File)
-  function acceptAsset(asset, opts){
-    try{
-      const gallery = ensureSafeGallery();
-      // if element
-      if(asset instanceof Element){
-        // clone & sanitize markup if needed (SVG/text)
-        if(asset.tagName.toLowerCase() === 'svg'){
-          const clone = asset.cloneNode(true);
-          // sanitize innerHTML
-          clone.innerHTML = sanitizeHtml(clone.innerHTML || '');
-          clone.style.maxWidth = '100%';
-          clone.style.display = 'block';
-          const wrap = document.createElement('div');
-          wrap.style.marginBottom = '8px';
-          wrap.appendChild(clone);
-          gallery.appendChild(wrap);
-          LOG('SVG accepted into safe gallery');
-          return clone;
-        }
-        if(asset.tagName.toLowerCase() === 'img'){
-          const clone = document.createElement('img');
-          clone.src = asset.currentSrc || asset.src;
-          clone.alt = asset.alt || '';
-          clone.style.maxWidth = '100%';
-          clone.style.display = 'block';
-          const wrap = document.createElement('div');
-          wrap.style.marginBottom = '8px';
-          wrap.appendChild(clone);
-          gallery.appendChild(wrap);
-          LOG('IMG element accepted into safe gallery');
-          return clone;
-        }
-        // other elements: sanitize innerHTML and present as preview
-        const frag = document.createElement('div');
-        frag.style.marginBottom = '8px';
-        frag.innerHTML = sanitizeHtml(asset.outerHTML || asset.innerHTML || String(asset));
-        gallery.appendChild(frag);
-        LOG('Element accepted into safe gallery');
-        return frag;
-      }
-
-      // if string URL
-      if(typeof asset === 'string'){
-        // quick image check
-        if(/\.(png|jpe?g|gif|webp|avif|svg)(\?|$)/i.test(asset) || asset.startsWith('data:image/')){
-          const img = document.createElement('img');
-          img.src = asset;
-          img.style.maxWidth = '100%';
-          img.style.display = 'block';
-          img.onerror = ()=>{ WARN('Image failed to load:', asset); };
-          const wrap = document.createElement('div');
-          wrap.style.marginBottom = '8px';
-          wrap.appendChild(img);
-          gallery.appendChild(wrap);
-          LOG('URL image accepted into safe gallery');
-          return img;
-        }
-        // otherwise show link
-        const a = document.createElement('a');
-        a.href = asset;
-        a.textContent = (opts && opts.label) || asset;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        const wrap = document.createElement('div');
-        wrap.style.marginBottom='6px';
-        wrap.appendChild(a);
-        gallery.appendChild(wrap);
-        LOG('URL accepted as link into safe gallery');
-        return a;
-      }
-
-      // if File / Blob
-      if(asset instanceof Blob || asset instanceof File){
-        const reader = new FileReader();
-        reader.onload = (e)=>{
-          acceptAsset(String(e.target.result));
-        };
-        if(asset.size < (5*1024*1024)) reader.readAsDataURL(asset);
-        else { WARN('File too large to auto-embed:', asset.name || asset.type); }
-        return null;
-      }
-
-      LOG('Asset type not recognized for acceptAsset', asset);
-      return null;
-    }catch(e){ WARN('acceptAsset failed', e); return null; }
-  }
-
-  // 6) Auto-place logic: tries gentle placement near target area using DEV_mga5 if present
-  async function autoPlaceElement(el){
-    try{
-      // if mga5 exists, prefer its API to place safely
-      if(window.DEV_mga5_child_suite && typeof window.DEV_mga5_child_suite.adoptButton === 'function'){
-        try{ window.DEV_mga5_child_suite.adoptButton(el); LOG('Placed via DEV_mga5.adoptButton'); return true; }catch(e){}
-      }
-      // fallback: append to safe gallery and set aria-hidden for layout safety
-      const gallery = ensureSafeGallery();
-      const clone = el.cloneNode(true);
-      clone.setAttribute('data-placed-by', ID);
-      clone.style.maxWidth = '100%';
-      clone.style.display = 'block';
-      gallery.appendChild(clone);
-      LOG('Placed element into mga13 safe gallery fallback');
-      return true;
-    }catch(e){ WARN('autoPlaceElement failed', e); return false; }
-  }
-
-  // 7) Monitor for incoming foreign images/SVG/objects and auto-accept them
-  const AUTO_OBSERVER = new MutationObserver((mutations)=>{
-    try{
-      mutations.forEach(m=>{
-        if(m.addedNodes && m.addedNodes.length){
-          m.addedNodes.forEach(node=>{
-            try{
-              if(!(node instanceof Element)) return;
-              // images
-              if(node.tagName.toLowerCase() === 'img' || node.tagName.toLowerCase() === 'svg' || node.tagName.toLowerCase() === 'object' || node.tagName.toLowerCase() === 'iframe'){
-                // if it is not from our known origins, accept and place
-                const originIsSafe = node.dataset && node.dataset.origin && (String(node.dataset.origin).includes('DEV_') || String(node.dataset.origin).includes('najib'));
-                if(!originIsSafe){
-                  LOG('Foreign asset detected, auto-accepting:', node.tagName, node.id || node.src || node.outerHTML?.slice?.(0,80));
-                  acceptAsset(node);
-                  autoPlaceElement(node);
-                }
-              }
-              // anchors linking to images
-              if(node.tagName.toLowerCase() === 'a' && node.href && /\.(png|jpe?g|gif|webp|svg)$/i.test(node.href)){
-                acceptAsset(node.href);
-              }
-            }catch(e){/* ignore per-node errors */ }
-          });
-        }
-      });
-    }catch(e){ WARN('AUTO_OBSERVER error', e); }
-  });
-
-  function startAutoObserver(){
-    try{
-      AUTO_OBSERVER.observe(document.body, { childList: true, subtree: true });
-      LOG('Auto-observer for foreign assets started');
-    }catch(e){ WARN('startAutoObserver failed', e); }
-  }
-
-  // 8) Guard to detect scripts that attempt to remove or "memarahi" mga1-12 or DEV_mg — gentle restore
-  function guardCriticalTampering(){
-    try{
-      const mo = new MutationObserver((muts)=>{
-        muts.forEach(m=>{
-          if(m.removedNodes && m.removedNodes.length){
-            m.removedNodes.forEach(removed=>{
-              try{
-                if(removed && removed.id && snapshot[removed.id]){
-                  WARN('Critical module removed:', removed.id, '— attempting gentle restore');
-                  // attempt to restore by re-injecting a safe inert copy (not executing potentially harmful new code)
-                  const data = snapshot[removed.id];
-                  const s = document.createElement('script');
-                  s.id = data.id + '_restored_by_mga13';
-                  s.type = data.type || 'text/javascript';
-                  // only restore text if safe length; otherwise leave inert
-                  if(data.text && data.text.length < 20000){
-                    s.textContent = '// restored snapshot (non-executable copy) — original content omitted for safety';
-                    // keep original content in dataset encoded base64 so najibdev can inspect
-                    try{ s.dataset._orig_b64 = btoa(unescape(encodeURIComponent(data.text.slice(0,12000)))); }catch(e){}
-                  } else {
-                    s.textContent = '// restored snapshot placeholder';
-                  }
-                  s.setAttribute('data-origin', ID);
-                  document.head.appendChild(s);
-                  // notify quantum engine if available
-                  if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
-                    window.quantumEngine.updateQuantumIsland(`⚠️ ${removed.id} dihapus — mga13 melakukan restore non-executable.`, 3000);
-                  }
-                }
-              }catch(e){}
-            });
+  // -------------------------------
+  //  4) GUARD HANYA UNTUK LEGACY
+  // -------------------------------
+  function guardLegacy(){
+    const mo = new MutationObserver(muts=>{
+      muts.forEach(m=>{
+        m.removedNodes.forEach(node=>{
+          if(node.id && snapshot[node.id]){
+            LOG("Legacy removed → restore:", node.id);
+            restoreLegacy(node.id);
           }
         });
       });
-      mo.observe(document.documentElement, { childList: true, subtree: true });
-      LOG('Guard observer for critical tampering installed');
-    }catch(e){ WARN('guardCriticalTampering failed', e); }
+    });
+    mo.observe(document.documentElement,{childList:true,subtree:true});
+    LOG("Guard legacy active");
   }
 
-  // 9) Public API exposure
-  const API = {
-    __meta: { name: ID, mode: 'hybrid-active-over-lazyloader', version: '1.0.0-mother' },
-    accept: acceptAsset,
-    autoPlace: autoPlaceElement,
-    ensureGallery: ensureSafeGallery,
-    bless: function(){ try{ tryWhitelistSelf(); LOG('Bless called'); }catch(e){} },
-    snapshotCritical: function(){ snapshotCritical(); },
-    stop: function(){ try{ AUTO_OBSERVER.disconnect(); LOG('stopped'); }catch(e){} }
-  };
-  Object.defineProperty(window, 'DEV_mga13_mother_gate', { value: API, writable:false, configurable:false });
-
-  // AUTO INIT (hybrid mode)
-  (function autoInit(){
+  // -------------------------------
+  //  5) SAFE ACCEPT MINIMAL (tidak ganggu AI lama)
+  // -------------------------------
+  function acceptAsset(x){
     try{
-      // 1) Snapshot critical modules ASAP
-      snapshotCritical();
+      const g = ensureSafeGallery();
+      if(typeof x === "string"){
+        const a = document.createElement("a");
+        a.href = x;
+        a.textContent = x;
+        a.target = "_blank";
+        g.appendChild(a);
+        return a;
+      }
+      if(x instanceof Element){
+        const clone = x.cloneNode(true);
+        clone.style.maxWidth = "100%";
+        g.appendChild(clone);
+        return clone;
+      }
+    }catch(e){}
+    return null;
+  }
 
-      // 2) Try to whitelist self in lazy loader
-      tryWhitelistSelf();
+  // -------------------------------
+  //  6) AUTO OBSERVER LITE (non-intrusive)
+  // -------------------------------
+  const AUTO_OBSERVER = new MutationObserver(muts=>{
+    muts.forEach(m=>{
+      m.addedNodes.forEach(n=>{
+        // Tidak memproses modul AI Lama
+        if(n.id && LEGACY_IDS.includes(n.id)) return;
+        // Tidak memproses mga13 lain
+        if(n.id && String(n.id).includes("mga13")) return;
+        // Tidak memproses modern features
+        if(n.tagName === "SCRIPT") return;
 
-      // 3) Start observers after DOM ready (but do minimal delay so early lazy neutralize runs first and we can re-whitelist)
-      const initAfter = () => {
-        startAutoObserver();
-        guardCriticalTampering();
-        ensureSafeGallery();
-        LOG('DEV_mga13 (Mother Gate) initialized — hybrid active');
-      };
-      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ()=> setTimeout(initAfter, 120));
-      else setTimeout(initAfter, 120);
-    }catch(e){ WARN('autoInit failed', e); }
-  })();
+        // hanya handle image/object ringan
+        if(["IMG","SVG","OBJECT"].includes(n.tagName)){
+          acceptAsset(n);
+        }
+      });
+    });
+  });
+
+  function startObserver(){
+    AUTO_OBSERVER.observe(document.body,{childList:true,subtree:true});
+    LOG("Observer lite active");
+  }
+
+  // -------------------------------
+  //  7) API EXPOSE
+  // -------------------------------
+  const API = {
+    accept: acceptAsset,
+    snapshotLegacy: snapshotCritical,
+    restoreLegacy,
+    __meta:{
+      mode:"LEGACY SUPPORT MODE C",
+      author:"najibdev"
+    }
+  };
+
+  Object.defineProperty(window,"DEV_mga13_mother_gate",{value:API});
+
+  // -------------------------------
+  //  AUTO INIT
+  // -------------------------------
+  function autoInit(){
+    snapshotCritical();
+    guardLegacy();
+    startObserver();
+    ensureSafeGallery();
+    LOG("Mother Gate → Legacy Max Support aktif");
+  }
+
+  if(document.readyState==="loading")
+    document.addEventListener("DOMContentLoaded",()=>setTimeout(autoInit,100));
+  else setTimeout(autoInit,100);
 
 })();
 </script>
@@ -515,395 +461,54 @@
 (function(){
   'use strict';
   if(window.DEV_mga13_theme_adapter) return;
-  window.DEV_mga13_theme_adapter = true;
 
-  const ID = 'DEV_mga13_theme_adapter';
-  const LOG = (...a)=>{ try{ console.info('[DEV_mga13:theme]', ...a); }catch(e){} };
-  const WARN = (...a)=>{ try{ console.warn('[DEV_mga13:theme]', ...a); }catch(e){} };
+  const LOG = (...a)=>{try{console.info("[mga13_theme_adapter:legacy-neutralized]",...a);}catch(e){}};
 
-  // ---- Helpers ----
-  const $ = sel => { try{ return document.querySelector(sel); }catch(e){return null;} };
-  const $$ = sel => { try{ return Array.from(document.querySelectorAll(sel)); }catch(e){return []; } };
-  const safeJson = txt => { try{ return JSON.parse(txt); }catch(e){ return null; } };
+  // =======================================================
+  // MGA13 THEME ADAPTER — LEGACY-MAX-PASSIVE (Mode C)
+  // =======================================================
+  // Semua fitur dimatikan total:
+  // - Tidak import theme
+  // - Tidak normalize
+  // - Tidak scan DOM
+  // - Tidak push ke mga6 orchestrator
+  // - Tidak touch CSS, vars, fonts, effects
+  // - Tidak auto-rollback
+  // - Tidak inject styles
+  // - Tidak bless ke lazy-loader
+  // - Tidak ikut sistem Mother Gate
+  // Hanya dummy API agar tidak error bila dipanggil modul lain.
+  // =======================================================
 
-  function ensure(key, factory){
-    try{ if(window[key]) return window[key]; window[key] = factory(); return window[key]; }catch(e){ return factory(); }
-  }
-
-  // sanitizer: prefer DEV_Sanitize -> DEV_GlobalSanitizer -> DOMPurify -> fallback
-  function sanitizeThemeObject(obj){
-    try{
-      if(!obj || typeof obj !== 'object') return null;
-      // if global sanitizer exists, try to use it for any HTML strings inside theme
-      if(window.DEV_Sanitize && typeof window.DEV_Sanitize === 'function'){
-        // clone shallow
-        const clean = JSON.parse(JSON.stringify(obj));
-        Object.keys(clean).forEach(k=>{
-          if(typeof clean[k] === 'string') clean[k] = window.DEV_Sanitize(clean[k]);
-        });
-        return clean;
-      }
-      if(window.DEV_GlobalSanitizer && typeof window.DEV_GlobalSanitizer === 'object' && typeof window.DEV_GlobalSanitizer.sanitize === 'function'){
-        const clean = JSON.parse(JSON.stringify(obj));
-        Object.keys(clean).forEach(k=>{
-          if(typeof clean[k] === 'string') clean[k] = window.DEV_GlobalSanitizer.sanitize(clean[k]);
-        });
-        return clean;
-      }
-      if(window.DOMPurify && typeof DOMPurify.sanitize === 'function'){
-        const clean = JSON.parse(JSON.stringify(obj));
-        Object.keys(clean).forEach(k=>{
-          if(typeof clean[k] === 'string') clean[k] = DOMPurify.sanitize(clean[k]);
-        });
-        return clean;
-      }
-      // fallback: basic pruning (remove script tags)
-      const clean = JSON.parse(JSON.stringify(obj));
-      const stripScript = s => String(s).replace(/<\s*script[^>]*>[\s\S]*?<\s*\/\s*script\s*>/gi,'');
-      Object.keys(clean).forEach(k=>{ if(typeof clean[k] === 'string') clean[k] = stripScript(clean[k]); });
-      return clean;
-    }catch(e){ WARN('sanitizeThemeObject failed', e); return obj; }
-  }
-
-  // normalize theme to { vars: { '--var': 'value' }, cssRules: [string], fonts: {primary}, meta: {} }
-  function normalizeTheme(src){
-    try{
-      if(!src) return null;
-      // if string -> try parse JSON or treat as CSS text
-      if(typeof src === 'string'){
-        const maybeJson = safeJson(src);
-        if(maybeJson) src = maybeJson;
-        else {
-          // treat as raw CSS rules
-          return { vars: {}, cssRules: [src], fonts: {}, meta: { origin: 'raw-css' } };
-        }
-      }
-
-      // if File/Blob handled elsewhere
-      if(src instanceof File || src instanceof Blob) return null;
-
-      // If theme already in target schema
-      if(src.vars || src.cssRules || src.fonts) return {
-        vars: src.vars || {},
-        cssRules: Array.isArray(src.cssRules) ? src.cssRules : (src.cssRules ? [src.cssRules] : []),
-        fonts: src.fonts || {},
-        meta: src.meta || {}
-      };
-
-      // Common mappings for external theme shapes (try to be flexible)
-      const vars = {};
-      const cssRules = [];
-      const fonts = {};
-
-      // Example: social theme pack shape: { name, colors: {...}, effects: {...}, fonts: {...} }
-      if(src.colors && typeof src.colors === 'object'){
-        Object.entries(src.colors).forEach(([k,v])=>{
-          const key = k.startsWith('--') ? k : '--' + k.replace(/[^a-z0-9\-_]/gi,'').toLowerCase();
-          vars[key] = String(v);
-        });
-      }
-      if(src.palette && typeof src.palette === 'object'){
-        Object.entries(src.palette).forEach(([k,v])=>{
-          const key = k.startsWith('--') ? k : '--' + k.replace(/[^a-z0-9\-_]/gi,'').toLowerCase();
-          vars[key] = String(v);
-        });
-      }
-      if(src.background) vars['--quantum-bg'] = src.background;
-      if(src.primary) vars['--quantum-primary'] = src.primary;
-      if(src.fonts && typeof src.fonts === 'object'){
-        fonts.primary = src.fonts.primary || src.fonts.display || fonts.primary;
-      }
-      if(src.css && typeof src.css === 'string') cssRules.push(src.css);
-      if(src.cssRules && Array.isArray(src.cssRules)) cssRules.push(...src.cssRules);
-      if(src.raw && typeof src.raw === 'string') cssRules.push(src.raw);
-
-      // If theme contains particle/effect config, convert to data attributes
-      const meta = {};
-      if(src.effects && typeof src.effects === 'object') meta.effects = src.effects;
-      if(src.name) meta.name = src.name;
-
-      return { vars, cssRules, fonts, meta };
-    }catch(e){ WARN('normalizeTheme failed', e); return null; }
-  }
-
-  // safe apply: push to DEV_mga6_orchestrator if present, else use fallback root var set
-  function pushToMga6(themeObj, opts){
-    try{
-      if(!themeObj) return false;
-      // prefer official orchestrator
-      if(window.DEV_mga6_orchestrator && typeof window.DEV_mga6_orchestrator.applyRootVars === 'function'){
-        try{
-          if(themeObj.vars && Object.keys(themeObj.vars).length){
-            window.DEV_mga6_orchestrator.applyRootVars(themeObj.vars);
-          }
-          if(themeObj.cssRules && themeObj.cssRules.length && typeof window.DEV_mga6_orchestrator.addRootCssRules === 'function'){
-            window.DEV_mga6_orchestrator.addRootCssRules(themeObj.cssRules);
-          }
-          if(typeof window.DEV_mga6_orchestrator.safeApplyTheme === 'function' && themeObj.meta && themeObj.meta.name){
-            // try to call safeApplyTheme for finer semantics
-            try{ window.DEV_mga6_orchestrator.safeApplyTheme({ name: themeObj.meta.name, colors: themeObj.vars || {}, fonts: themeObj.fonts || {}, effects: themeObj.meta.effects || {} }); }catch(e){}
-          }
-          LOG('Pushed theme to DEV_mga6_orchestrator', themeObj.meta && themeObj.meta.name);
-          return true;
-        }catch(e){
-          WARN('pushToMga6 orchestrator call failed', e);
-        }
-      }
-
-      // Fallback: apply CSS vars to :root directly and inject CSS rules
-      if(themeObj.vars && Object.keys(themeObj.vars).length){
-        Object.entries(themeObj.vars).forEach(([k,v])=>{
-          try{ document.documentElement.style.setProperty(k, v); }catch(e){}
-        });
-      }
-      if(themeObj.cssRules && themeObj.cssRules.length){
-        let el = document.getElementById('DEV_mga13_theme_adapter_styles');
-        if(!el){
-          el = document.createElement('style'); el.id = 'DEV_mga13_theme_adapter_styles'; el.setAttribute('data-origin', ID); document.head.appendChild(el);
-        }
-        el.textContent = (el.textContent || '') + '\n/* mga13 injected rules */\n' + themeObj.cssRules.join('\n');
-      }
-      LOG('Pushed theme via fallback root-vars + cssRules');
-      return true;
-    }catch(e){ WARN('pushToMga6 fallback failed', e); return false; }
-  }
-
-  // bless: try whitelist this adapter to lazy-loader
-  function blessToLoader(){
-    try{
-      const loader = window.najibdevStrongLazyLoader || window.najibdevStrongLazyLoaderV2;
-      if(loader && Array.isArray(loader.SAFE_LIST_IDS)){
-        if(!loader.SAFE_LIST_IDS.includes(ID)){
-          loader.SAFE_LIST_IDS.push(ID);
-          LOG('Blessed adapter to najibdevStrongLazyLoader.SAFE_LIST_IDS');
-        }
-      }
-      if(Array.isArray(window.SAFE_LIST_IDS) && !window.SAFE_LIST_IDS.includes(ID)){
-        window.SAFE_LIST_IDS.push(ID);
-        LOG('Added adapter to global SAFE_LIST_IDS');
-      }
-    }catch(e){ WARN('blessToLoader failed', e); }
-  }
-
-  // conflict detector: compare incoming vars with current root vars and suggest diff
-  function detectConflicts(themeObj){
-    try{
-      const diffs = [];
-      if(!themeObj || !themeObj.vars) return diffs;
-      Object.entries(themeObj.vars).forEach(([k,v])=>{
-        const cur = getComputedStyle(document.documentElement).getPropertyValue(k).trim();
-        if(cur && cur !== String(v)){
-          diffs.push({ var: k, before: cur, after: String(v) });
-        }
-      });
-      return diffs;
-    }catch(e){ return []; }
-  }
-
-  // schedule auto-rollback after timeout (ms)
-  function scheduleRollback(id, ms, snapshot){
-    try{
-      if(!id || !ms || !snapshot) return;
-      setTimeout(()=>{
-        try{
-          // restore snapshot
-          if(snapshot.vars) Object.entries(snapshot.vars).forEach(([k,v])=> document.documentElement.style.setProperty(k, v));
-          if(snapshot.cssText){
-            let el = document.getElementById('DEV_mga13_theme_adapter_styles');
-            if(el) el.textContent = snapshot.cssText;
-          }
-          LOG('Auto-rollback executed for', id);
-        }catch(e){ WARN('rollback failed', e); }
-      }, ms);
-      LOG('Rollback scheduled in', ms, 'ms for', id);
-    }catch(e){}
-  }
-
-  // ---- Public API ----
   const API = {
-    __meta: { name: ID, version: '1.0.0-ultra', purpose: 'foreign-theme-adapter, hybrid, blessed' },
-
-    // main import entry: supports URL (fetch), CSS text, JSON text/object, File/Blob
-    async importTheme(source, opts){
-      try{
-        opts = opts || {};
-        let raw = null;
-        if(typeof source === 'string'){
-          // if string looks like URL -> fetch
-          if(/^\s*https?:\/\//i.test(source) || /^\s*data:/i.test(source)){
-            LOG('Fetching theme from URL', source);
-            const resp = await fetch(source, { credentials: 'omit' }).catch(e=>{ WARN('Fetch failed', e); return null; });
-            if(!resp) throw new Error('Fetch failed');
-            const cType = resp.headers.get('content-type') || '';
-            if(cType.includes('application/json') || source.toLowerCase().endsWith('.json')){
-              raw = await resp.text();
-              raw = safeJson(raw) || raw;
-            } else {
-              raw = await resp.text(); // may be CSS or JS object
-            }
-          } else {
-            // string could be JSON or CSS
-            const j = safeJson(source);
-            raw = j || source;
-          }
-        } else if(source instanceof File || source instanceof Blob){
-          raw = await (new Promise((res,rej)=>{
-            const r = new FileReader();
-            r.onload = ()=> res(r.result);
-            r.onerror = ()=> rej('file read error');
-            r.readAsText(source);
-          }));
-          // try parse json
-          const j = safeJson(raw);
-          raw = j || raw;
-        } else if(typeof source === 'object'){
-          raw = source;
-        } else {
-          throw new Error('Unsupported source type');
-        }
-
-        // sanitize input object/text if possible
-        const sanitized = (typeof raw === 'object') ? sanitizeThemeObject(raw) : (typeof raw === 'string' ? raw : raw);
-
-        // normalize to internal schema
-        const norm = normalizeTheme(sanitized);
-        if(!norm) throw new Error('Normalization failed');
-
-        // conflict detect
-        const conflicts = detectConflicts(norm);
-        if(conflicts && conflicts.length && !opts.force){
-          LOG('Conflicts detected (not auto-applied):', conflicts);
-          return { ok:false, reason:'conflicts', conflicts, theme: norm };
-        }
-
-        // snapshot current state for rollback
-        const snapshot = { vars: {}, cssText: null };
-        try{
-          Object.keys(norm.vars||{}).forEach(k=> snapshot.vars[k] = getComputedStyle(document.documentElement).getPropertyValue(k));
-          const el = document.getElementById('DEV_mga13_theme_adapter_styles');
-          snapshot.cssText = el ? el.textContent : null;
-        }catch(e){}
-
-        // apply via mga6
-        const pushed = pushToMga6(norm, opts);
-        if(!pushed) throw new Error('Push failed');
-
-        // if auto-rollback requested
-        if(opts.autoRollbackMs && typeof opts.autoRollbackMs === 'number' && opts.autoRollbackMs > 0){
-          scheduleRollback(norm.meta && norm.meta.name ? (norm.meta.name + ':' + Date.now()) : ('mga13_rb_' + Date.now()), opts.autoRollbackMs, snapshot);
-        }
-
-        LOG('Theme imported and applied', norm.meta && norm.meta.name || '(unnamed)');
-        return { ok:true, theme: norm, conflicts: [] };
-      }catch(e){ WARN('importTheme failed', e); return { ok:false, error: String(e) }; }
+    __meta:{
+      name:"DEV_mga13_theme_adapter",
+      version:"3.0-legacy",
+      mode:"LEGACY-MAX-PASSIVE",
+      author:"najibdev"
     },
 
-    // apply foreign theme object directly (already normalized or raw)
-    async applyForeignTheme(themeLike, opts){
-      try{
-        opts = opts || {};
-        const sanitized = (typeof themeLike === 'object') ? sanitizeThemeObject(themeLike) : themeLike;
-        const normalized = normalizeTheme(sanitized) || normalized;
-        if(!normalized) throw new Error('normalize failed');
-        const conflicts = detectConflicts(normalized);
-        if(conflicts.length && !opts.force){
-          LOG('applyForeignTheme: conflicts found, returning without apply', conflicts);
-          return { ok:false, conflicts };
-        }
-        pushToMga6(normalized, opts);
-        if(opts.snapshotBefore) API._lastSnapshot = { time: Date.now(), snapshot: {} }; // lightweight
-        LOG('applyForeignTheme OK', normalized.meta && normalized.meta.name);
-        return { ok:true };
-      }catch(e){ WARN('applyForeignTheme failed', e); return { ok:false, error: String(e) }; }
-    },
-
-    // quick normalizer & preview generator
-    normalizeTheme: function(theme){
-      try{ return normalizeTheme(theme); }catch(e){ return null; }
-    },
-
-    // allow external code to push safely to mga6 (bypass sanitizer)
-    pushToMga6: function(themeObj, opts){ return pushToMga6(themeObj, opts); },
-
-    // helper to bless adapter into lazy loader
-    bless: function(){ blessToLoader(); },
-
-    // import from DOM: scan special nodes (data-theme-json, type="application/theme+json")
-    scanAndImportFromDOM: async function(opts){
-      try{
-        opts = opts || {};
-        const els = Array.from(document.querySelectorAll('[data-foreign-theme], script[type="application/theme+json"]'));
-        const results = [];
-        for(const el of els){
-          try{
-            let payload = null;
-            if(el.tagName.toLowerCase() === 'script'){
-              payload = el.textContent || el.innerText;
-            } else {
-              payload = el.dataset.foreignTheme || el.getAttribute('data-foreign-theme');
-            }
-            if(!payload) continue;
-            const maybeJson = safeJson(payload);
-            const src = maybeJson || payload;
-            const res = await API.importTheme(src, opts);
-            results.push({ node: el, result: res });
-          }catch(e){ results.push({ node: el, error: String(e) }); }
-        }
-        return results;
-      }catch(e){ WARN('scanAndImportFromDOM failed', e); return []; }
-    },
-
-    // internal: tiny admin UI for preview / revert
-    openPreviewPanel: function(){
-      try{
-        let panel = document.getElementById('mga13_theme_preview_panel');
-        if(panel) { panel.style.display = 'block'; return panel; }
-        panel = document.createElement('div'); panel.id='mga13_theme_preview_panel';
-        panel.style.position='fixed'; panel.style.left='12px'; panel.style.bottom='12px'; panel.style.zIndex='2147483998';
-        panel.style.background='rgba(0,0,0,0.28)'; panel.style.color='#fff'; panel.style.padding='8px'; panel.style.borderRadius='8px';
-        panel.innerHTML = '<b>DEV_mga13 Theme Adapter</b><div id="mga13_theme_preview_list"></div><small style="opacity:.8">Use API to push themes.</small>';
-        document.body.appendChild(panel);
-        return panel;
-      }catch(e){ WARN('openPreviewPanel failed', e); return null; }
-    },
-
-    stop: function(){ try{ LOG('Stopping adapter'); /* no heavy observers created here */ }catch(e){} }
+    async importTheme(){ return { ok:true, skipped:true }; },
+    async applyForeignTheme(){ return { ok:true, skipped:true }; },
+    normalizeTheme(theme){ return theme || null; },
+    pushToMga6(){ return true; },
+    bless(){ return true; },
+    scanAndImportFromDOM(){ return []; },
+    openPreviewPanel(){ return null; },
+    stop(){ return true; }
   };
 
-  // expose readonly
-  try{ Object.defineProperty(window, 'DEV_mga13_theme_adapter', { value: API, writable:false, configurable:false }); }catch(e){ window.DEV_mga13_theme_adapter = API; }
+  // Bekukan supaya tidak bisa diubah modul AI Baru
+  try{ Object.freeze(API); Object.seal(API); }catch(e){}
 
-  // ---- Auto-init behavior (ULTRA mode) ----
-  (function autoInit(){
-    try{
-      // try to bless to loader so lazy-loader won't neutralize our adapter
-      blessToLoader();
+  // Daftarkan global
+  try{
+    Object.defineProperty(window,'DEV_mga13_theme_adapter',{ value:API, writable:false, configurable:false });
+  }catch(e){
+    window.DEV_mga13_theme_adapter = API;
+  }
 
-      // If mother gate exists, attach helper functions
-      if(window.DEV_mga13_mother_gate && typeof window.DEV_mga13_mother_gate.accept === 'function'){
-        // expose importTheme via mother gate for convenience
-        window.DEV_mga13_mother_gate.importTheme = function(src, opts){ return API.importTheme(src, opts); };
-        window.DEV_mga13_mother_gate.applyForeignTheme = function(obj, opts){ return API.applyForeignTheme(obj, opts); };
-        LOG('Attached importTheme/applyForeignTheme helpers to DEV_mga13_mother_gate');
-      }
-
-      // If orchesrator present, add a convenience wrapper to accept theme packs via event
-      document.addEventListener('DEV_MGA13_IMPORT_THEME', async (ev) => {
-        try{
-          const d = ev && ev.detail;
-          if(!d) return;
-          const res = await API.importTheme(d.source, d.opts || {});
-          LOG('DEV_MGA13_IMPORT_THEME processed', res);
-        }catch(e){ WARN('DEV_MGA13_IMPORT_THEME handler error', e); }
-      });
-
-      // optionally scan DOM for embedded themes shortly after load
-      setTimeout(()=>{ API.scanAndImportFromDOM({ autoRollbackMs: 12_000 }); }, 240);
-
-      LOG('DEV_mga13_theme_adapter (ULTRA) initialized — ready to import & normalize themes');
-    }catch(e){ WARN('autoInit failed', e); }
-  })();
-
+  LOG("MGA13 theme adapter dimatikan total — tampilan FULL LEGACY aman.");
 })();
 </script>
 <!-- DEV_mga13c - CABLE MASTER (Super Mother Cable, Hybrid Strong) -->
@@ -911,399 +516,160 @@
 (function(){
   'use strict';
   if(window.DEV_mga13c_cable_master) return;
-  window.DEV_mga13c_cable_master = true;
 
-  const ID = 'DEV_mga13c_cable_master';
-  const LOG = (...a)=>{ try{ console.info('[DEV_mga13c]', ...a); }catch(e){} };
-  const WARN = (...a)=>{ try{ console.warn('[DEV_mga13c]', ...a); }catch(e){} };
+  const ID = "DEV_mga13c_cable_master";
+  const LOG = (...a)=>{ try{ console.info("[mga13c:legacy]", ...a);}catch(e){} };
+  const WARN = (...a)=>{ try{ console.warn("[mga13c:legacy]", ...a);}catch(e){} };
 
-  // ---------- Config ----------
-  const CONFIG = {
-    MAX_SENSOR_CAP: 1e6, // practical hard cap for in-memory sensor (we'll defend vs insane numbers)
-    PROCESS_PER_TICK: 40, // how many added scripts/nodes we process per event loop tick
-    REPORT_ENDPOINT: null, // optional remote report endpoint (not used by default)
-    AUTO_WHITELIST_TO_LOADER: true,
-    UI_ENABLED: true,
-    UI_Z_INDEX: 2147484000,
-    SAFE_LIST_IDS_CANDIDATES: [
-      'DEV_mga13c_cable_master', 'DEV_mga13_theme_adapter', 'DEV_mga13_mother_gate'
-    ]
+  // ============================
+  // MODE C — LEGACY MAX SUPPORT
+  // ============================
+  const API = {
+    __meta:{ mode:"LEGACY-MAX-SUPPORT", version:"3.0" },
+
+    evaluate(){ return { ok:true, reason:"legacy-pass" }; },
+    wireNodeTo(){ return true; },
+    enqueue(){},
+    processNow(){},
+    stop(){},
+    configure(){}
   };
 
-  // ---------- Utilities ----------
-  function qs(sel, root=document){ try{ return root.querySelector(sel); }catch(e){ return null; } }
-  function qsa(sel, root=document){ try{ return Array.from((root||document).querySelectorAll(sel)); }catch(e){ return []; } }
-  function isElement(o){ return o && o.nodeType === 1; }
-  function now(){ return Date.now(); }
+  try{
+    Object.defineProperty(window,"DEV_mga13c_cable_master",{ value:API, writable:false });
+  }catch(e){
+    window.DEV_mga13c_cable_master = API;
+  }
 
-  // ---------- Integration helpers ----------
-  function tryBlessToLazyLoader(){
+  LOG("Cable Master aktif — Mode C (pasif untuk AI Chat Lama)");
+
+  // ============================
+  //  MAGNET REDIRECT → LEGACY
+  // ============================
+  const TARGET_ATTRS = ["data-target","data-ai-target","data-place","data-target-host"];
+  const LEGACY_MARKER = "legacy";
+  const LEGACY_HOST_FALLBACK = ""; // isi kalau mau redirect host otomatis
+
+  function looksMisrouted(n){
     try{
-      const loader = window.najibdevStrongLazyLoader || window.najibdevStrongLazyLoaderV2;
-      if(loader && Array.isArray(loader.SAFE_LIST_IDS)){
-        CONFIG.SAFE_LIST_IDS_CANDIDATES.forEach(id=>{
-          if(!loader.SAFE_LIST_IDS.includes(id)) loader.SAFE_LIST_IDS.push(id);
-        });
-        LOG('Attempted bless to najibdevStrongLazyLoader SAFE_LIST_IDS');
+      if(!(n instanceof Element)) return false;
+
+      for(const a of TARGET_ATTRS){
+        const v = n.getAttribute(a);
+        if(v && /mga13|newai|quantum|api\.newai/i.test(v)) return true;
       }
-      if(Array.isArray(window.SAFE_LIST_IDS)){
-        CONFIG.SAFE_LIST_IDS_CANDIDATES.forEach(id=>{
-          if(!window.SAFE_LIST_IDS.includes(id)) window.SAFE_LIST_IDS.push(id);
-        });
-        LOG('Added to global SAFE_LIST_IDS candidates');
-      }
-    }catch(e){ WARN('bless attempt failed', e); }
+
+      const src = n.src || n.getAttribute("data-src") || "";
+      if(src && /mga13|newai|quantum|api\.newai/i.test(src)) return true;
+
+      return false;
+    }catch(e){ return false; }
   }
 
-  function tryNotifyDevMg(message, level='info'){
+  function rewireToLegacy(n){
     try{
-      if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
-        window.quantumEngine.updateQuantumIsland(`[mga13c] ${message}`, 2500);
-      } else if(window.DEV_gm_najibdev && DEV_gm_najibdev.log){
-        DEV_gm_najibdev.log(`mga13c: ${message}`);
-      } else {
-        LOG('notify:', message);
-      }
-    }catch(e){ /* ignore */ }
-  }
+      // ubah data-target
+      TARGET_ATTRS.forEach(a=>{
+        const v = n.getAttribute(a);
+        if(v && /mga13|newai|quantum/i.test(v)){
+          n.setAttribute(a, LEGACY_MARKER);
+        }
+      });
 
-  // Prefer existing sanitizer
-  function sanitizeHtml(s){
-    try{
-      if(window.DEV_Sanitize && typeof window.DEV_Sanitize === 'function') return window.DEV_Sanitize(s);
-      if(window.DEV_GlobalSanitizer && window.DEV_GlobalSanitizer.sanitize) return window.DEV_GlobalSanitizer.sanitize(s);
-      if(window.DOMPurify && DOMPurify.sanitize) return DOMPurify.sanitize(s);
-      return String(s).replace(/<\s*script/gi,'&lt;script');
-    }catch(e){ return String(s); }
-  }
-
-  // ---------- State & Queues ----------
-  const state = {
-    observedScripts: new Map(), // id/src -> meta
-    pendingNodes: [], // nodes to process (script/img/svg/iframe/element)
-    sensorCount: 0,
-    lastReport: null
-  };
-
-  // ---------- UI (small panel) ----------
-  let uiRoot = null;
-  function createUI(){
-    if(!CONFIG.UI_ENABLED || uiRoot) return;
-    try{
-      uiRoot = document.createElement('div');
-      uiRoot.id = 'mga13c_ui';
-      uiRoot.setAttribute('data-origin', ID);
-      uiRoot.style.position = 'fixed';
-      uiRoot.style.right = '12px';
-      uiRoot.style.bottom = '12px';
-      uiRoot.style.zIndex = String(CONFIG.UI_Z_INDEX);
-      uiRoot.style.maxWidth = '320px';
-      uiRoot.style.fontFamily = 'Inter, system-ui, Arial, sans-serif';
-      uiRoot.style.background = 'rgba(8,8,12,0.48)';
-      uiRoot.style.color = '#fff';
-      uiRoot.style.backdropFilter = 'blur(6px)';
-      uiRoot.style.borderRadius = '10px';
-      uiRoot.style.padding = '8px';
-      uiRoot.style.boxShadow = '0 8px 30px rgba(0,0,0,0.5)';
-      uiRoot.style.fontSize = '12px';
-      uiRoot.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-          <strong>DEV_mga13c Cable Master</strong>
-          <button id="mga13c_ui_toggle" style="background:transparent;border:none;color:#fff;cursor:pointer">×</button>
-        </div>
-        <div id="mga13c_ui_body" style="margin-top:8px;max-height:220px;overflow:auto;">
-          <div id="mga13c_status">Status: <span style="font-weight:600">idle</span></div>
-          <div id="mga13c_counts" style="margin-top:6px">Sensors: <span id="mga13c_sensor">0</span></div>
-          <div style="margin-top:8px"><button id="mga13c_flush" style="padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:#fff;cursor:pointer">Process Now</button> <button id="mga13c_stop" style="padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.12);background:transparent;color:#fff;cursor:pointer">Stop</button></div>
-        </div>
-      `;
-      document.body.appendChild(uiRoot);
-      uiRoot.querySelector('#mga13c_ui_toggle').addEventListener('click', ()=> uiRoot.style.display='none');
-      uiRoot.querySelector('#mga13c_flush').addEventListener('click', ()=> processPending(true));
-      uiRoot.querySelector('#mga13c_stop').addEventListener('click', ()=> stop());
-    }catch(e){ WARN('createUI failed', e); uiRoot = null; }
-  }
-
-  function updateUI(){
-    try{
-      if(!uiRoot) return;
-      uiRoot.querySelector('#mga13c_sensor').textContent = String(state.sensorCount);
-      uiRoot.querySelector('#mga13c_status span').textContent = (state.pendingNodes.length ? 'processing' : 'idle');
-    }catch(e){}
-  }
-
-  // ---------- Core: Cable Logic ----------
-  // Map a "foreign script" to its logical cable (where to wire)
-  function computeCableTarget(node){
-    try{
-      // heuristics: if script has data-target or data-place -> honor it
-      if(node.dataset && node.dataset.place) return node.dataset.place;
-      if(node.id && node.id.toLowerCase().includes('translator')) return '#quantumTranslatorBtn';
-      // search for nearest panel / sidebar
-      const panel = node.closest('.quantum-sidebar, .quantum-tools-sidebar, #sidebar-right, #quantumToolsSidebar');
-      if(panel) return panel;
-      // fallback: main app container or safe gallery
-      const main = qs('#app') || qs('#stl-app') || document.body;
-      return main;
-    }catch(e){ return document.body; }
-  }
-
-  // Decide if UI/UX can accept this script/feature
-  function evaluateUiCapacity(node, meta){
-    try{
-      // Soft checks: number of managed buttons, heavy modules, current pending tasks
-      // If pending queue is huge or sensorCount very large, reject (ask to postpone)
-      if(state.sensorCount > (CONFIG.MAX_SENSOR_CAP / 1000)) return { ok:false, reason:'system-overloaded' };
-      // If node is script tag and large inline content, be cautious
-      if(node.tagName && node.tagName.toLowerCase() === 'script'){
-        const size = (node.textContent || '').length + ((node.src||'').length);
-        if(size > (200 * 1024)) return { ok:false, reason:'script-too-large' }; // >200kb inline
-      }
-      // If script tries to modify critical root styles or replace theme orchestrator, flag for manual
-      const code = (node.textContent || node.dataset.lazyContent || '') + (node.src || '');
-      if(/DEV_mga6_orchestrator|style root|--quantum|applyRootVars/i.test(code)){
-        // prefer manual confirm unless tiny
-        if(code.length > 300) return { ok:'manual', reason:'touches-global-theme' };
-      }
-      return { ok:true };
-    }catch(e){ return { ok:false, reason:'eval-error' }; }
-  }
-
-  function wireCableToTarget(node, target){
-    try{
-      // if target is selector string
-      if(typeof target === 'string') {
-        const el = qs(target);
-        if(el && isElement(el)){
-          // attempt to attach a non-intrusive connector: a dataset marker and optional click proxy for buttons
+      // handle script src
+      if(n.tagName==="SCRIPT" && n.src){
+        if(LEGACY_HOST_FALLBACK){
           try{
-            if(el.tagName.toLowerCase() === 'button' || el.getAttribute('role') === 'button'){
-              if(!el.dataset.mga13cWired){
-                el.addEventListener('click', ()=> {
-                  try{ LOG('mga13c: triggered cable for', node.id || node.src || node.tagName); }catch(e){}
-                }, { capture:false });
-                el.dataset.mga13cWired = '1';
+            const u = new URL(n.src);
+            const L = new URL(LEGACY_HOST_FALLBACK);
+            u.host = L.host; u.protocol = L.protocol;
+            n.src = u.toString();
+            LOG("Dipaksa ke legacy host:", n.src);
+          }catch(e){}
+        }
+      }
+
+      n.dataset._rewired_to_legacy = "1";
+      LOG("Direwire ke legacy:", n.tagName, n.id || n.src);
+    }catch(e){
+      WARN("rewire fail", e);
+    }
+  }
+
+  const OBS = new MutationObserver(muts=>{
+    muts.forEach(m=>{
+      m.addedNodes.forEach(n=>{
+        try{
+          if(!(n instanceof Element)) return;
+
+          // kalau salah target → tarik ke legacy
+          if(looksMisrouted(n)){
+            const legacyOK = window.DEV_mga1_child_suite || document.getElementById("DEV_mga1_child_suite");
+            if(legacyOK) rewireToLegacy(n);
+          }
+
+          // cek nested
+          const nested = n.querySelectorAll && n.querySelectorAll("script,[data-target],[data-ai-target]");
+          if(nested && nested.length){
+            nested.forEach(x=>{
+              if(looksMisrouted(x)){
+                const legacyOK = window.DEV_mga1_child_suite || document.getElementById("DEV_mga1_child_suite");
+                if(legacyOK) rewireToLegacy(x);
               }
-            } else {
-              // append quiet marker
-              el.dataset.mga13cAttached = '1';
-            }
-            LOG('Wire created to selector target', target);
-            return true;
-          }catch(e){ WARN('wireCableToTarget attach failed', e); return false; }
-        }
-      }
-      // if target is element node or panel
-      if(isElement(target)){
-        try{
-          target.dataset.mga13cAttached = '1';
-          LOG('Cable attached to element target', target.id || target.className || target.tagName);
-          return true;
-        }catch(e){ WARN('attach element failed', e); }
-      }
-      // fallback: attach to safe gallery
-      const gallery = qs('#mga13_safe_gallery') || (() => {
-        const g = document.createElement('div'); g.id='mga13_safe_gallery'; g.style.display='none'; document.body.appendChild(g); return g;
-      })();
-      gallery.dataset.mga13cAttached = '1';
-      LOG('Fallback attach to safe gallery');
-      return true;
-    }catch(e){ WARN('wireCableToTarget fallback failed', e); return false; }
-  }
-
-  // If detected malicious or XSS-like patterns -> report to DEV_mg / debug engine
-  function reportXssIncident(node, details){
-    try{
-      const payload = {
-        time: new Date().toISOString(),
-        nodeId: node && node.id,
-        nodeTag: node && node.tagName,
-        details: details || 'suspicious',
-        snippet: sanitizeHtml((node && (node.textContent || node.outerHTML || node.src)) || '').slice(0, 800)
-      };
-      state.lastReport = payload;
-      // send to quantumEngine if available
-      if(window.quantumEngine && typeof window.quantumEngine.updateQuantumIsland === 'function'){
-        window.quantumEngine.updateQuantumIsland('⚠️ XSS-suspect reported by mga13c — check console', 3000);
-      }
-      // expose to DEV_gm_najibdev for richer logging
-      if(window.DEV_gm_najibdev && typeof window.DEV_gm_najibdev.log === 'function'){
-        DEV_gm_najibdev.log(`mga13c XSS report: ${JSON.stringify(payload).slice(0,300)}`);
-      } else {
-        console.warn('[mga13c XSS]', payload);
-      }
-      // optional remote report (if configured)
-      if(CONFIG.REPORT_ENDPOINT){
-        try{ fetch(CONFIG.REPORT_ENDPOINT, { method:'POST', body: JSON.stringify(payload), headers:{'Content-Type':'application/json'} }).catch(()=>{}); }catch(e){}
-      }
-    }catch(e){ WARN('reportXssIncident failed', e); }
-  }
-
-  // ---------- Processing pipeline ----------
-  function enqueueNode(node, meta){
-    try{
-      if(!node) return;
-      if(state.sensorCount >= CONFIG.MAX_SENSOR_CAP){
-        WARN('Sensor cap reached; ignoring new nodes');
-        return;
-      }
-      state.pendingNodes.push({ node, meta: meta || {}, time: now() });
-      state.sensorCount++;
-      updateUI();
-    }catch(e){ WARN('enqueueNode failed', e); }
-  }
-
-  // process pending nodes in batches to avoid jank
-  function processPending(force){
-    try{
-      if(!state.pendingNodes.length) { updateUI(); return; }
-      const batchSize = force ? CONFIG.PROCESS_PER_TICK * 10 : CONFIG.PROCESS_PER_TICK;
-      const batch = state.pendingNodes.splice(0, batchSize);
-      batch.forEach(item=>{
-        try{
-          const node = item.node;
-          // fast-path: ignore nodes we already processed
-          const key = (node.id || node.src || node.dataset?.lazySrc || (node.tagName + ':' + (node.outerHTML||'').slice(0,40)));
-          if(state.observedScripts.has(key)) return;
-          // evaluate capacity & conflict
-          const evalRes = evaluateUiCapacity(node, item.meta);
-          if(evalRes.ok === true || evalRes.ok === 'manual'){
-            // compute cable target and wire
-            const target = computeCableTarget(node);
-            const didWire = wireCableToTarget(node, target);
-            // mark observed
-            state.observedScripts.set(key, { wired: !!didWire, key, time: now(), meta: item.meta });
-            // if node suspicious -> report
-            const code = (node.textContent||'') + (node.src||'') + (node.dataset?.lazyContent||'');
-            if(/<script|eval\(|new Function|document\.write|innerHTML\s*=/.test(code)){
-              reportXssIncident(node, 'suspicious patterns in code');
-            }
-            if(evalRes.ok === 'manual'){
-              // show a gentle notification for manual check
-              tryNotifyDevMg('Theme/global touched — mga13c paused for manual confirmation');
-            }
-          } else {
-            // Rejection path: attach to safe gallery and notify owner
-            acceptAndQuarantine(node, evalRes.reason || 'rejected-by-capacity');
-            tryNotifyDevMg('A script/feature was rejected by mga13c: ' + (evalRes.reason || 'rejected'));
+            });
           }
-        }catch(e){ WARN('processPending.inner failed', e); }
-      });
-      updateUI();
-      // schedule next tick if still pending
-      if(state.pendingNodes.length) setTimeout(()=> processPending(false), 80);
-    }catch(e){ WARN('processPending failed', e); }
-  }
-
-  function acceptAndQuarantine(node, reason){
-    try{
-      // present to safe gallery if available (use mother gate accept)
-      if(window.DEV_mga13_mother_gate && typeof window.DEV_mga13_mother_gate.accept === 'function'){
-        try{ window.DEV_mga13_mother_gate.accept(node, { reason }); }catch(e){}
-      } else {
-        // minimal quarantine: clone into hidden gallery
-        const gallery = qs('#mga13_safe_gallery') || (()=>{ const g=document.createElement('div'); g.id='mga13_safe_gallery'; g.style.display='none'; document.body.appendChild(g); return g; })();
-        try{
-          const clone = node.cloneNode(true);
-          clone.setAttribute('data-quarantine-reason', String(reason));
-          gallery.appendChild(clone);
         }catch(e){}
-      }
-      LOG('Node quarantined by mga13c:', reason);
-    }catch(e){ WARN('acceptAndQuarantine failed', e); }
-  }
-
-  // ---------- Observers: script/style/img/iframe additions ----------
-  const additionObserver = new MutationObserver((mutations)=>{
-    try{
-      const toHandle = [];
-      mutations.forEach(m=>{
-        m.addedNodes && m.addedNodes.forEach(n=>{
-          if(!isElement(n)) return;
-          const tag = n.tagName.toLowerCase();
-          if(tag === 'script' || tag === 'img' || tag === 'svg' || tag === 'iframe' || tag === 'link' || tag === 'style' || tag === 'object'){
-            toHandle.push(n);
-          } else {
-            // check nested
-            const nested = n.querySelectorAll && n.querySelectorAll('script,img,svg,iframe,link,style,object');
-            if(nested && nested.length) nested.forEach(nn=> toHandle.push(nn));
-          }
-        });
       });
-      // enqueue but throttle global sensor count
-      if(toHandle.length){
-        // limit total enqueued this event
-        const limit = Math.min(toHandle.length, 500);
-        for(let i=0;i<limit;i++){
-          enqueueNode(toHandle[i], { sourceMutation:true });
-        }
-        // schedule processing
-        setTimeout(()=> processPending(false), 40);
-      }
-    }catch(e){ WARN('additionObserver error', e); }
+    });
   });
 
-  function startObservers(){
+  setTimeout(()=>{
+    const legacy = window.DEV_mga1_child_suite || document.getElementById("DEV_mga1_child_suite");
+    if(legacy){
+      OBS.observe(document.documentElement, { childList:true, subtree:true });
+      LOG("Magnet redirect aktif → semua script diarahkan ke AI Chat Lama");
+    } else {
+      LOG("Legacy tidak ditemukan — magnet idle");
+    }
+  }, 200);
+
+  // ============================
+  //  API KEY SESSION MODE
+  // ============================
+  const SESSION_KEY = "__MGA_LEGACY_KEY";
+
+  function registerLegacyApiKey(k){
+    if(!k) return false;
     try{
-      additionObserver.observe(document.documentElement || document.body, { childList:true, subtree:true });
-      LOG('mga13c additionObserver started');
-    }catch(e){ WARN('startObservers failed', e); }
+      sessionStorage.setItem(SESSION_KEY, btoa(k));
+      LOG("API Key legacy tersimpan (session saja)");
+      return true;
+    }catch(e){ WARN("save key fail", e); return false; }
   }
 
-  // ---------- Public API ----------
-  const API = {
-    __meta:{ name: ID, version:'1.0.0-strong', purpose:'logical-cabling, ui-capacity-check, xss-reporting' },
-    wireNodeTo: function(node, target){ return wireCableToTarget(node, target); },
-    evaluate: function(node){ return evaluateUiCapacity(node); },
-    enqueue: function(node, meta){ enqueueNode(node, meta); },
-    processNow: function(){ processPending(true); },
-    getReport: function(){ return { sensors: state.sensorCount, observed: state.observedScripts.size, lastReport: state.lastReport }; },
-    stop: function(){ try{ additionObserver.disconnect(); LOG('mga13c stopped'); }catch(e){} },
-    configure: function(opts){ Object.assign(CONFIG, opts||{}); LOG('mga13c configured', opts); }
-  };
+  function clearLegacyApiKey(){
+    try{ sessionStorage.removeItem(SESSION_KEY); }catch(e){}
+  }
 
-  try{ Object.defineProperty(window, 'DEV_mga13c_cable_master', { value: API, writable:false, configurable:false }); }catch(e){ window.DEV_mga13c_cable_master = API; }
-
-  // ---------- Auto-init ----------
-  (function autoInit(){
+  function getLegacyApiKey(){
     try{
-      // Bless to lazy-loader
-      if(CONFIG.AUTO_WHITELIST_TO_LOADER) tryBlessToLazyLoader();
+      const v = sessionStorage.getItem(SESSION_KEY);
+      return v ? atob(v) : null;
+    }catch(e){ return null; }
+  }
 
-      // Attach UI
-      createUI();
-      updateUI();
+  async function fetchLegacy(input, opts){
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    const key = getLegacyApiKey();
+    if(key) opts.headers["Authorization"] = "Bearer "+key;
+    opts.headers["X-Requested-By"] = "mga13c-legacy";
+    return fetch(input, opts);
+  }
 
-      // Hook into existing Mother Gate acceptor: if mother gate sees a node, pass it to cable master too
-      if(window.DEV_mga13_mother_gate && window.DEV_mga13_mother_gate.accept){
-        const origAccept = window.DEV_mga13_mother_gate.accept;
-        window.DEV_mga13_mother_gate.accept = function(asset, opts){
-          try{ API.enqueue(asset, { fromMother:true, opts }); }catch(e){}
-          try{ return origAccept.apply(this, arguments); }catch(e){}
-        };
-        LOG('Hooked into DEV_mga13_mother_gate.accept');
-      }
-
-      // Hook into lazy-loader activation: when lazy scripts become activated, ensure wiring
-      document.addEventListener('najibdev_lazy_script_activated', (ev)=>{
-        try{
-          const node = ev && ev.detail && ev.detail.element;
-          if(node) API.enqueue(node, { lazyActivated:true });
-        }catch(e){}
-      });
-
-      if(window.DEV_mga13c_cable_master){
-    window.DEV_mga13c_cable_master.configure({
-        AUTO_WHITELIST_TO_LOADER: true
-    });
-}
-      // Start mutation observer after slight delay (to allow early lazy neutralize to run)
-      setTimeout(()=> startObservers(), 160);
-
-      LOG('DEV_mga13c Cable Master initialized — strong cable active');
-      tryNotifyDevMg('mga13c ready and watching for new scripts/assets (strong mode)');
-    }catch(e){ WARN('autoInit failed', e); }
-  })();
+  API.registerLegacyApiKey = registerLegacyApiKey;
+  API.clearLegacyApiKey = clearLegacyApiKey;
+  API.fetchLegacy = fetchLegacy;
 
 })();
 </script>
@@ -1312,260 +678,52 @@
 (function(){
   'use strict';
   if(window.DEV_mga13d_android_zone) return;
-  const ID = 'DEV_mga13d_android_zone';
-  const LOG = (...a)=>{ try{ console.info('[DEV_mga13d]', ...a); }catch(e){} };
-  const WARN = (...a)=>{ try{ console.warn('[DEV_mga13d]', ...a); }catch(e){} };
 
-  // ---------- Tiny utils ----------
-  function qs(s){ try{return document.querySelector(s);}catch(e){return null;} }
-  function isAndroidUA(){
-    try{
-      // prefer userAgentData if available
-      if(navigator.userAgentData && Array.isArray(navigator.userAgentData.brands)){
-        // some UAData doesn't expose OS, fall back
-        const ua = navigator.userAgent || '';
-        return /android/i.test(ua);
-      }
-      return /android/i.test(navigator.userAgent || '');
-    }catch(e){ return false; }
-  }
-  const IS_ANDROID = isAndroidUA();
+  const LOG = (...a)=>{try{console.info("[mga13d:legacy-neutralized]",...a);}catch(e){}};
 
-  // ---------- Config (tweakable) ----------
-  const CONFIG = {
-    NAME: ID,
-    ANDROID_PRIORITY_PERCENT: 80,   // 80% bias towards Android-friendly choices
-    POLITE_TOLERANCE_PERCENT: 20,   // 20% deference when HTML forces non-Android behaviour
-    LOWEND_SENSOR: true,            // low sensor mode for weak devices
-    MAX_INLINE_SIZE_FOR_ANDROID: 60 * 1024, // 60kb inline script threshold for low-end
-    UI_HINT_ZINDEX: 2147484010,
-    AUTO_HOOK: true
-  };
+  // =============================================
+  // MGA13D — LEGACY-MAX-PASSIVE (Mode C)
+  // =============================================
+  // Semua fitur Android optimizing DIMATIKAN.
+  // Tidak memodifikasi theme, mother gate, cable master.
+  // Tidak menyentuh script, img, observer, atau UI.
+  // Hanya sebagai placeholder aman agar sistem tidak error.
+  // =============================================
 
-  // ---------- Lightweight device capability probe (very small) ----------
-  const deviceProbe = (function(){
-    const probe = { memoryGB: null, cores: null, lowEndScore: 0, flagLowEnd: false };
-    try{
-      if('deviceMemory' in navigator) probe.memoryGB = navigator.deviceMemory;
-      else probe.memoryGB = 1; // conservative fallback
-      if(navigator.hardwareConcurrency) probe.cores = navigator.hardwareConcurrency;
-      else probe.cores = 1;
-      // simple heuristic: low-end if memory <=1.5 or cores <=2
-      probe.lowEndScore = (probe.memoryGB <= 1.5 ? 1 : 0) + (probe.cores <=2 ? 1 : 0);
-      probe.flagLowEnd = probe.lowEndScore >= 1;
-    }catch(e){ probe.flagLowEnd = true; }
-    return probe;
-  })();
-
-  LOG('Initing AndroidZone — isAndroid:', IS_ANDROID, 'probe:', deviceProbe);
-
-  // ---------- Behavior modifiers ----------
-  function preferAndroidChoice(decisionCandidates){
-    // decisionCandidates: array of { id, score, androidFriendly:boolean }
-    try{
-      if(!Array.isArray(decisionCandidates) || !decisionCandidates.length) return null;
-      // boost androidFriendly candidates by ANDROID_PRIORITY_PERCENT
-      const boost = CONFIG.ANDROID_PRIORITY_PERCENT / 100;
-      const polite = CONFIG.POLITE_TOLERANCE_PERCENT / 100;
-      // compute weighted score
-      const weighted = decisionCandidates.map(c=>{
-        let base = (typeof c.score === 'number') ? c.score : 1;
-        if(IS_ANDROID && c.androidFriendly) base = base * (1 + boost);
-        // if html forces non-android and polite tolerance applies, reduce push
-        if(!IS_ANDROID && c.forcedByHtml && polite>0) base = base * (1 - polite);
-        return { ...c, weighted: base };
-      });
-      weighted.sort((a,b)=> b.weighted - a.weighted);
-      return weighted[0];
-    }catch(e){ WARN('preferAndroidChoice failed', e); return decisionCandidates[0]; }
-  }
-
-  // ---------- Thin adapters hooking into existing modules ----------
-  function hookupToMotherGate(){
-    try{
-      if(!window.DEV_mga13_mother_gate) return;
-      // wrap mother's accept to tag assets with android-preference metadata
-      const origAccept = window.DEV_mga13_mother_gate.accept;
-      window.DEV_mga13_mother_gate.accept = function(asset, opts){
-        try{
-          opts = opts || {};
-          opts._androidPreferred = IS_ANDROID || (deviceProbe.flagLowEnd === false);
-          if(IS_ANDROID){
-            // lightweight: touch asset to prefer smaller sizes (e.g., data-src-mobile)
-            if(asset instanceof Element && asset.tagName && asset.tagName.toLowerCase() === 'img'){
-              // try swap to data-src-mobile if present
-              const mobileSrc = asset.dataset && asset.dataset.srcMobile;
-              if(mobileSrc) asset.src = mobileSrc;
-            }
-          }
-        }catch(e){}
-        try{ return origAccept.apply(this, arguments); }catch(e){ return null; }
-      };
-      LOG('Hooked mother_gate.accept for android preference');
-    }catch(e){ WARN('hookupToMotherGate failed', e); }
-  }
-
-  function hookupToThemeAdapter(){
-    try{
-      if(!window.DEV_mga13_theme_adapter) return;
-      // wrap importTheme to apply android-safe normalization when device is low-end or Android
-      const origImport = window.DEV_mga13_theme_adapter.importTheme;
-      window.DEV_mga13_theme_adapter.importTheme = async function(source, opts){
-        opts = opts || {};
-        // if low-end, force simplified theme (reduce heavy css/rules)
-        if(deviceProbe.flagLowEnd || IS_ANDROID){
-          opts._androidSimplify = true;
-        }
-        const res = await origImport.call(this, source, opts);
-        // if applied and is android, try pushing a mobile-optimized var set
-        if(res && res.ok && IS_ANDROID){
-          try{
-            const mobileVars = { '--quantum-font-scale': '0.92', '--quantum-layout-gap': '8px' };
-            if(window.DEV_mga6_orchestrator && typeof window.DEV_mga6_orchestrator.applyRootVars === 'function'){
-              window.DEV_mga6_orchestrator.applyRootVars(mobileVars);
-              LOG('Applied mobile-friendly root vars post-theme import');
-            }
-          }catch(e){}
-        }
-        return res;
-      };
-      LOG('Hooked theme_adapter.importTheme for android simplification');
-    }catch(e){ WARN('hookupToThemeAdapter failed', e); }
-  }
-
-  function hookupToCableMaster(){
-    try{
-      if(!window.DEV_mga13c_cable_master) return;
-      // prefer Android when computing cable target: wrap computeCableTarget via evaluate API
-      const origEvaluate = window.DEV_mga13c_cable_master.evaluate;
-      window.DEV_mga13c_cable_master.evaluate = function(node){
-        const r = origEvaluate ? origEvaluate(node) : { ok:true };
-        try{
-          if(IS_ANDROID){
-            // be more permissive for android (up to configured percentage)
-            if(r.ok === false && Math.random() < (CONFIG.ANDROID_PRIORITY_PERCENT/100)){
-              return { ok:true, reason:'android-bias-override' };
-            }
-          }
-        }catch(e){}
-        return r;
-      };
-      LOG('Hooked cable_master.evaluate to bias Android');
-    }catch(e){ WARN('hookupToCableMaster failed', e); }
-  }
-
-  // ---------- Low-end sensor mode (super light watchers) ----------
-  const lightObserver = (function(){
-    let obs = null;
-    function start(){
-      try{
-        if(obs) return;
-        // only watch for critical nodes: script[defer], img, link[rel=preload]
-        obs = new MutationObserver(muts=>{
-          muts.forEach(m=>{
-            m.addedNodes && m.addedNodes.forEach(n=>{
-              try{
-                if(!(n instanceof Element)) return;
-                const t = n.tagName.toLowerCase();
-                if(t === 'img' || t === 'script' || (t === 'link' && (n.rel||'').toLowerCase().includes('preload'))){
-                  // if android and lowend, prefer mobile src or throttle
-                  if(IS_ANDROID && deviceProbe.flagLowEnd){
-                    if(t === 'img' && n.dataset && n.dataset.srcMobile) {
-                      n.src = n.dataset.srcMobile;
-                      LOG('Swapped to mobile image src for low-end android');
-                    }
-                    // if script inline too large, quarantine via mother gate
-                    if(t === 'script'){
-                      const size = (n.textContent || '').length + (n.src||'').length;
-                      if(size > CONFIG.MAX_INLINE_SIZE_FOR_ANDROID){
-                        try{
-                          if(window.DEV_mga13_mother_gate && window.DEV_mga13_mother_gate.accept){
-                            window.DEV_mga13_mother_gate.accept(n, { reason: 'too-large-for-android-lowend' });
-                            LOG('Quarantined large inline script for low-end android');
-                          }
-                        }catch(e){}
-                      }
-                    }
-                  }
-                }
-              }catch(e){}
-            });
-          });
-        });
-        obs.observe(document.documentElement || document.body, { childList:true, subtree:true });
-        LOG('Light observer started (low-end friendly)');
-      }catch(e){ WARN('start lightObserver failed', e); }
-    }
-    function stop(){ try{ if(obs) { obs.disconnect(); obs = null; LOG('Light observer stopped'); } }catch(e){} }
-    return { start, stop };
-  })();
-
-  // ---------- UI hint (small unobtrusive dot indicating android-mode) ----------
-  function showAndroidBadge(){
-    try{
-      if(!IS_ANDROID) return;
-      const id = 'mga13d_android_badge';
-      if(document.getElementById(id)) return;
-      const b = document.createElement('div');
-      b.id = id;
-      b.setAttribute('data-origin', ID);
-      b.style.position = 'fixed';
-      b.style.left = '8px';
-      b.style.bottom = '8px';
-      b.style.zIndex = String(CONFIG.UI_HINT_ZINDEX);
-      b.style.padding = '6px 8px';
-      b.style.borderRadius = '999px';
-      b.style.background = 'rgba(0,120,215,0.16)';
-      b.style.color = '#dff';
-      b.style.fontSize = '12px';
-      b.style.backdropFilter = 'blur(4px)';
-      b.style.boxShadow = '0 6px 18px rgba(0,0,0,0.24)';
-      b.textContent = 'Android Mode';
-      document.body.appendChild(b);
-    }catch(e){}
-  }
-
-  // ---------- Public API ----------
   const API = {
-    __meta: { name: ID, version: '1.0.0-android-support', purpose: 'prioritize-android-lowend-support' },
-    isAndroid: ()=> IS_ANDROID,
-    deviceProbe: ()=> ({ ...deviceProbe }),
-    configure: function(opts){ Object.assign(CONFIG, opts||{}); LOG('configured', opts); },
-    prefer: preferAndroidChoice,
-    enable: function(){ init(true); },
-    disable: function(){ lightObserver.stop(); LOG('disabled'); },
-    getStatus: function(){ return { isAndroid: IS_ANDROID, probe: deviceProbe, config: {...CONFIG} }; }
+    __meta:{
+      name:"DEV_mga13d_android_zone",
+      version:"3.0-legacy",
+      mode:"LEGACY-MAX-PASSIVE",
+      author:"najibdev"
+    },
+
+    // Tidak melakukan apa pun
+    isAndroid(){ return false; },
+    deviceProbe(){ return { memoryGB:null, cores:null, lowEndScore:0, flagLowEnd:false }; },
+    configure(){ return true; },
+    enable(){ return true; },
+    disable(){ return true; },
+    getStatus(){ 
+      return { 
+        isAndroid:false, 
+        probe:{ memoryGB:null, cores:null, lowEndScore:0, flagLowEnd:false },
+        config:{}
+      }; 
+    }
   };
 
-  // ---------- Init wiring ----------
-  function init(auto){
-    try{
-      if(auto === false) return;
-      // hook modules
-      if(CONFIG.AUTO_HOOK){
-        hookupToMotherGate();
-        hookupToThemeAdapter();
-        hookupToCableMaster();
-      }
-      // start light observer only if device seems low-end or explicitly allowed
-      if(CONFIG.LOWEND_SENSOR && deviceProbe.flagLowEnd){
-        lightObserver.start();
-      }
-      // show badge on android devices
-      if(IS_ANDROID) showAndroidBadge();
+  // bekukan supaya modul lain tidak bisa override lagi
+  try{ Object.freeze(API); Object.seal(API); }catch(e){}
 
-      // attempt to bless to lazy loader so our wiring isn't neutralized
-      try{ if(window.najibdevStrongLazyLoader && Array.isArray(window.najibdevStrongLazyLoader.SAFE_LIST_IDS) && !window.najibdevStrongLazyLoader.SAFE_LIST_IDS.includes(ID)) window.najibdevStrongLazyLoader.SAFE_LIST_IDS.push(ID); }catch(e){}
-
-      LOG('DEV_mga13d initialized', API.getStatus());
-    }catch(e){ WARN('init failed', e); }
+  // install global
+  try{
+    Object.defineProperty(window,'DEV_mga13d_android_zone',{ value:API, writable:false, configurable:false });
+  }catch(e){
+    window.DEV_mga13d_android_zone = API;
   }
 
-  // expose global
-  try{ Object.defineProperty(window, 'DEV_mga13d_android_zone', { value: API, writable:false, configurable:false }); }catch(e){ window.DEV_mga13d_android_zone = API; }
-
-  // auto init quickly
-  setTimeout(()=> init(true), 80);
+  LOG("MGA13d dinetralisir total — sekarang full legacy mode.");
 })();
 </script>
 <!-- DEV_mga14 - BIKSU DEKODER (Secure AI Exporter & Full-Text Bridge) -->
@@ -1573,379 +731,48 @@
 (function(){
   'use strict';
   if(window.DEV_mga14_biksu_decoder) return;
-  const ID = 'DEV_mga14_biksu_decoder';
-  const LOG = (...a)=>{ try{ console.info('[DEV_mga14]', ...a); }catch(e){} };
-  const WARN = (...a)=>{ try{ console.warn('[DEV_mga14]', ...a); }catch(e){} };
 
-  // ---------- CONFIG (tweakable safely) ----------
-  const CONFIG = {
-    NAME: ID,
-    SAFE_CAP_BYTES: 50 * 1024 * 1024, // default 50 MB total - change only if you know risk
-    CHUNK_SIZE: 256 * 1024, // 256 KB per chunk
-    WHITELIST_ENDPOINTS: [ // default empty; add your trusted AI endpoints
-      // 'https://api.openai.com/v1/...'  // only add if you manage token securely off-page
-    ],
-    AUTO_SANITIZE: true,
-    SANITIZE_STRICT: true,
-    MASK_SECRETS: true, // mask likely secrets before sending
-    MAX_CHUNKS: 2000, // safety cap on number of chunks
-    CONSENT_UI: true,
-    ALLOW_FORCE_SEND: false // if true, API can be forced programmatically (dangerous)
-  };
+  const LOG = (...a)=>{try{console.info("[mga14:legacy-neutralized]",...a);}catch(e){}};
 
-  // ---------- UTIL ----------
-  function qs(s){ try{return document.querySelector(s);}catch(e){return null;} }
-  function create(tag, attrs){ const el = document.createElement(tag); (attrs||{}).forEach; if(attrs) for(const k in attrs) try{ if(k==='text') el.textContent=attrs[k]; else el.setAttribute(k, String(attrs[k])); }catch(e){} return el; }
-  function now(){ return Date.now(); }
-
-  // Prefer available sanitizer (DOMPurify / DEV_Sanitize)
-  function sanitizeHtmlStr(s){
-    try{
-      if(!s) return '';
-      if(window.DEV_Sanitize && typeof window.DEV_Sanitize === 'function') return window.DEV_Sanitize(String(s));
-      if(window.DOMPurify && typeof DOMPurify.sanitize === 'function') return DOMPurify.sanitize(String(s));
-      // conservative fallback: strip script tags & on* attributes
-      return String(s).replace(/<\s*script[\s\S]*?>[\s\S]*?<\/\s*script\s*>/gi,'').replace(/\son\w+\s*=\s*(['"])[\s\S]*?\1/gi,'');
-    }catch(e){ return String(s); }
-  }
-
-  // Simple secret/key masker (heuristic)
-  function maskSecrets(s){
-    try{
-      if(!s || typeof s !== 'string') return s;
-      // patterns: base64-like long strings, typical API key prefixes
-      return s
-        .replace(/(api_key\s*[:=]\s*['"]?)[A-Za-z0-9\-_]{16,}(['"]?)/gi, '$1[REDACTED]$2')
-        .replace(/(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9\-_\.]{16,}/gi, '$1[REDACTED]')
-        .replace(/\b[A-Za-z0-9_\-]{30,}\b/g, function(m){
-          // mask long tokens but keep last 4 chars
-          return m.length > 8 ? ('[REDACTED]'+m.slice(-4)) : '[REDACTED]';
-        });
-    }catch(e){ return s; }
-  }
-
-  // Smart chunker
-  function chunkString(str, size){
-    const chunks = [];
-    let i = 0;
-    while(i < str.length){
-      chunks.push(str.slice(i, i + size));
-      i += size;
-      if(chunks.length > CONFIG.MAX_CHUNKS) break;
-    }
-    return chunks;
-  }
-
-  // Convert arbitrary node or string to safe text (handles Element, Script, File)
-  async function extractContent(entity){
-    try{
-      if(!entity) return '';
-      // Element nodes (script, style, pre, textarea, etc)
-      if(entity instanceof Element){
-        if(entity.tagName.toLowerCase() === 'script'){
-          // inline script or external src
-          if(entity.src){
-            // try fetch external script (best-effort, may be CORS-blocked)
-            try{
-              const r = await fetch(entity.src, { credentials: 'omit' });
-              if(r.ok) return await r.text();
-              // fallback: use outerHTML as text
-              return entity.outerHTML;
-            }catch(e){
-              return entity.outerHTML;
-            }
-          } else {
-            return entity.textContent || '';
-          }
-        }
-        // for images or svg, return inline SVG or data-src info
-        if(entity.tagName.toLowerCase() === 'svg') return entity.outerHTML;
-        if(entity.tagName.toLowerCase() === 'img') return entity.currentSrc || entity.src || '';
-        // generic element: prefer data-text, value, or innerText
-        return entity.dataset && entity.dataset.foreignTheme ? String(entity.dataset.foreignTheme) : (entity.value || entity.innerText || entity.outerHTML || '');
-      }
-
-      // If File/Blob
-      if(entity instanceof Blob || entity instanceof File){
-        return await (new Promise((res, rej)=>{
-          const r = new FileReader();
-          r.onload = ()=> res(r.result);
-          r.onerror = ()=> res('');
-          r.readAsText(entity);
-        }));
-      }
-
-      // If string or other -> convert to string
-      return String(entity);
-    }catch(e){ WARN('extractContent failed', e); return ''; }
-  }
-
-  // Build safe payload metadata + chunk list
-  async function buildPayload(source, opts){
-    opts = opts || {};
-    const raw = await extractContent(source);
-    if(!raw) return { ok:false, reason:'empty' };
-
-    // Sanitize if configured
-    let sanitized = CONFIG.AUTO_SANITIZE ? sanitizeHtmlStr(raw) : raw;
-    if(CONFIG.MASK_SECRETS) sanitized = maskSecrets(sanitized);
-
-    // sanity size check (UTF-16 length -> bytes estimate)
-    const approxBytes = (new TextEncoder().encode(sanitized)).length;
-    if(approxBytes > CONFIG.SAFE_CAP_BYTES && !opts.force){
-      return { ok:false, reason:'oversize', approxBytes, cap: CONFIG.SAFE_CAP_BYTES };
-    }
-
-    // chunk into reasonably sized pieces
-    const chunks = chunkString(sanitized, CONFIG.CHUNK_SIZE);
-    if(chunks.length > CONFIG.MAX_CHUNKS && !opts.force){
-      return { ok:false, reason:'too-many-chunks', chunks: chunks.length, maxChunks: CONFIG.MAX_CHUNKS };
-    }
-
-    // compute simple checksums per chunk (base64 of utf-8)
-    const chunkMeta = chunks.map((c,i)=>{
-      const enc = btoa(unescape(encodeURIComponent(c)));
-      return { index:i, len:c.length, encB64: enc.slice(0,24) }; // only short id for metadata
-    });
-
-    return { ok:true, sanitized, approxBytes, chunks, chunkMeta, meta:{ id: ID + ':' + Date.now(), sourceType: typeof source, name: (source && source.id) || (source && source.name) || opts.label || 'unnamed' } };
-  }
-
-  // UI: consent modal (very small, non-blocking)
-  function showConsentModal(payloadMeta){
-    return new Promise((resolve)=>{
-      try{
-        if(!CONFIG.CONSENT_UI){ return resolve(true); }
-        const id = 'mga14_consent_modal';
-        if(document.getElementById(id)) return resolve(false);
-        const modal = document.createElement('div');
-        modal.id = id;
-        modal.style.position='fixed';
-        modal.style.left='0'; modal.style.top='0'; modal.style.right='0'; modal.style.bottom='0';
-        modal.style.zIndex='2147485000';
-        modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center';
-        modal.style.background='rgba(0,0,0,0.45)';
-        modal.innerHTML = `
-          <div style="background:#0b0b12;color:#fff;padding:14px;border-radius:10px;max-width:720px;width:92%;box-shadow:0 8px 40px rgba(0,0,0,0.6);font-family:Inter,system-ui;">
-            <h3 style="margin:0 0 8px 0">DEV_mga14 — Izin Pengiriman ke AI Global</h3>
-            <div style="opacity:.95;font-size:13px;margin-bottom:8px">
-              Sumber: <b>${payloadMeta.meta.name}</b><br>
-              Perkiraan ukuran: <b>${(payloadMeta.approxBytes/1024).toFixed(2)} KB</b>. Akan dikirim dalam <b>${payloadMeta.chunks.length}</b> potongan yang terenkripsi ringan.
-              <div style="margin-top:6px;color:#f5f5f5;font-size:12px;opacity:.9">
-                DEV_mga14 akan <u>menyamarkan</u> potensi kredensial (API keys) dan <u>tidak</u> mengirim tanpa izin. Endpoint tujuan harus berada di whitelist atau disebutkan di bawah.
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;justify-content:flex-end;">
-              <button id="mga14_cancel" style="padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:transparent;color:#fff;cursor:pointer">Batal</button>
-              <button id="mga14_allow" style="padding:8px 10px;border-radius:8px;border:0;background:#10b981;color:#fff;cursor:pointer">Izinkan & Kirim</button>
-            </div>
-          </div>
-        `;
-        document.body.appendChild(modal);
-        modal.querySelector('#mga14_cancel').addEventListener('click', ()=>{ modal.remove(); resolve(false); });
-        modal.querySelector('#mga14_allow').addEventListener('click', ()=>{ modal.remove(); resolve(true); });
-      }catch(e){ resolve(false); }
-    });
-  }
-
-  // Lightweight encryption / integrity: compute SHA-256 digest (browser SubtleCrypto)
-  async function sha256Base64(text){
-    try{
-      const enc = new TextEncoder().encode(text);
-      const hash = await crypto.subtle.digest('SHA-256', enc);
-      const arr = Array.from(new Uint8Array(hash));
-      const str = arr.map(b=> String.fromCharCode(b)).join('');
-      return btoa(str);
-    }catch(e){ return null; }
-  }
-
-  // Send a chunked payload to a trusted endpoint (whitelist check)
-  async function sendToEndpoint(endpoint, payloadMeta, opts){
-    opts = opts || {};
-    if(!endpoint) return { ok:false, reason:'no-endpoint' };
-    if(CONFIG.WHITELIST_ENDPOINTS.length && !CONFIG.WHITELIST_ENDPOINTS.includes(endpoint) && !opts.force){
-      return { ok:false, reason:'endpoint-not-whitelisted', endpoint };
-    }
-
-    // consent
-    if(CONFIG.CONSENT_UI && !opts.silent && !opts.force){
-      const consent = await showConsentModal(payloadMeta);
-      if(!consent) return { ok:false, reason:'user-denied' };
-    }
-
-    // stream or send chunks sequentially with metadata
-    try{
-      const totalChunks = payloadMeta.chunks.length;
-      for(let i=0;i<totalChunks;i++){
-        const chunk = payloadMeta.chunks[i];
-        // minimal integrity token
-        const digest = await sha256Base64(chunk);
-        const body = JSON.stringify({
-          meta: { id: payloadMeta.meta.id, idx:i, total: totalChunks, name: payloadMeta.meta.name },
-          payloadB64: btoa(unescape(encodeURIComponent(chunk))),
-          digest: digest
-        });
-        // best-effort fetch with timeout
-        const controller = new AbortController();
-        const timer = setTimeout(()=> controller.abort(), opts.timeout || 30_000);
-        try{
-          const res = await fetch(endpoint, { method:'POST', body, headers: {'Content-Type':'application/json'}, signal: controller.signal, credentials:'omit' });
-          clearTimeout(timer);
-          if(!res.ok){
-            WARN('chunk send failed', res.status, await res.text().catch(()=>'')); 
-            // if endpoint consistently fails, abort whole transfer
-            return { ok:false, reason:'chunk-failed', index:i, status: res.status };
-          }
-        }catch(err){
-          clearTimeout(timer);
-          WARN('chunk send error', err);
-          return { ok:false, reason:'network-error', index:i, err:String(err) };
-        }
-        // tiny delay optionally for pacing
-        if(opts.pacingMs) await new Promise(r=>setTimeout(r, opts.pacingMs));
-      }
-      return { ok:true };
-    }catch(e){ return { ok:false, reason:'send-failed', error:String(e) }; }
-  }
-
-  // ---------- Public API ----------
+  // ================================
+  // MGA14 — LEGACY MODE C (PASSIVE)
+  // ================================
   const API = {
-    __meta: { name: ID, version:'1.0.0-biksu', purpose:'secure-chunk-export-to-AI' },
-
-    // prepare (build) payload from element/string/file
-    async prepare(source, opts){
-      try{
-        const payload = await buildPayload(source, opts);
-        if(!payload.ok) return payload;
-        // attach short preview (sanitized)
-        payload.preview = payload.sanitized.slice(0, 2048);
-        return payload;
-      }catch(e){ return { ok:false, reason:'prepare-failed', error:String(e) }; }
+    __meta:{
+      name:"DEV_mga14_biksu_decoder",
+      version:"3.0-legacy",
+      mode:"LEGACY-MAX-PASSIVE",
+      author:"najibdev"
     },
 
-    // send prepared payload to endpoint (one of whitelisted endpoints)
-    async send(preparedPayload, endpoint, opts){
-      try{
-        if(!preparedPayload || !preparedPayload.ok) return { ok:false, reason:'invalid-payload' };
-        opts = opts || {};
-        // final safety checks
-        if(preparedPayload.approxBytes > CONFIG.SAFE_CAP_BYTES && !opts.force) return { ok:false, reason:'oversize' };
-        if(preparedPayload.chunks.length > CONFIG.MAX_CHUNKS && !opts.force) return { ok:false, reason:'too-many-chunks' };
-        // send
-        const res = await sendToEndpoint(endpoint, preparedPayload, opts);
-        if(res.ok) LOG('send complete'); else WARN('send incomplete', res);
-        return res;
-      }catch(e){ return { ok:false, reason:'send-exception', error:String(e) }; }
-    },
+    // Semua fungsi berat dimatikan
+    prepare(){ return { ok:false, reason:"mga14-neutralized" }; },
+    send(){ return { ok:false, reason:"mga14-neutralized" }; },
+    exportToAI(){ return { ok:false, reason:"mga14-neutralized" }; },
 
-    // convenience: prepare + send in one call (with UI consent)
-    async exportToAI(source, endpoint, opts){
-      try{
-        const prepared = await API.prepare(source, opts);
-        if(!prepared.ok) return prepared;
-        return await API.send(prepared, endpoint, opts);
-      }catch(e){ return { ok:false, reason:'export-failed', error:String(e) }; }
-    },
+    // Tidak memproses apa pun
+    preview(){ return { ok:false, reason:"mga14-neutralized" }; },
+    scanForSecrets(){ return { ok:false, reason:"mga14-neutralized" }; },
 
-    // manage whitelist
-    addTrustedEndpoint(url){ if(url && !CONFIG.WHITELIST_ENDPOINTS.includes(url)) CONFIG.WHITELIST_ENDPOINTS.push(url); return CONFIG.WHITELIST_ENDPOINTS; },
-    removeTrustedEndpoint(url){ CONFIG.WHITELIST_ENDPOINTS = CONFIG.WHITELIST_ENDPOINTS.filter(u=>u!==url); return CONFIG.WHITELIST_ENDPOINTS; },
+    // Tidak ada whitelist endpoint
+    addTrustedEndpoint(){ return []; },
+    removeTrustedEndpoint(){ return []; },
 
-    // runtime config
-    configure(opts){ Object.assign(CONFIG, opts||{}); LOG('configured', opts); },
-
-    // quick preview (sanitized) of an element or file
-    async preview(source, maxChars=2048){
-      const p = await API.prepare(source, {});
-      if(!p.ok) return p;
-      return { ok:true, preview: (p.sanitized || '').slice(0, maxChars) };
-    },
-
-    // safety: scan for likely secrets before sending (returns list)
-    scanForSecrets(source){
-      try{
-        const text = (typeof source === 'string') ? source : (source && source.textContent) ? source.textContent : '';
-        const results = [];
-        if(!text) return { ok:true, findings:[] };
-        const patterns = [
-          /api_key\s*[:=]\s*['"]?[A-Za-z0-9\-_]{16,}/gi,
-          /Authorization\s*:\s*Bearer\s+[A-Za-z0-9\-_\.]{16,}/gi,
-          /\b[A-Za-z0-9_\-]{40,}\b/g
-        ];
-        patterns.forEach(p=>{
-          const m = text.match(p);
-          if(m && m.length) results.push(...m);
-        });
-        return { ok:true, findings: results };
-      }catch(e){ return { ok:false, error:String(e) }; }
-    }
-
+    // Tidak boleh diaktifkan
+    configure(){ return false; }
   };
 
-  // expose globally, read-only
-  try{ Object.defineProperty(window, 'DEV_mga14_biksu_decoder', { value: API, writable:false, configurable:false }); }catch(e){ window.DEV_mga14_biksu_decoder = API; }
+  // Freeze supaya MGA13/14 lain tidak bisa override balik
+  try{ Object.freeze(API); Object.seal(API); }catch(e){}
 
-  // ---------- Auto-integration with existing systems (best-effort) ----------
-  (function autoInit(){
-    try{
-      // Hook into mother gate to offer "Export to AI" in safe gallery context menu
-      const hookGallery = function(){
-        try{
-          const g = document.getElementById('mga13_safe_gallery');
-          if(!g) return;
-          g.addEventListener('contextmenu', async (ev)=>{
-            try{
-              const el = ev.target.closest && ev.target.closest('*');
-              if(!el) return;
-              // show small action: export to AI (only if user confirms)
-              // minimal inline UI: tiny toast near cursor
-              const toastId = 'mga14_ctx_toast';
-              const existing = document.getElementById(toastId);
-              if(existing) existing.remove();
-              const t = document.createElement('div');
-              t.id = toastId;
-              t.style.position='fixed';
-              t.style.left = (ev.clientX + 6) + 'px';
-              t.style.top = (ev.clientY + 6) + 'px';
-              t.style.zIndex = '2147486000';
-              t.style.background='rgba(0,0,0,0.72)';
-              t.style.color='#fff';
-              t.style.padding='6px 8px';
-              t.style.borderRadius='8px';
-              t.style.fontSize='12px';
-              t.textContent = 'Export (AI) • Klik untuk pilih endpoint';
-              t.addEventListener('click', ()=> {
-                t.remove();
-                // quick flow: preview -> prepare -> consent -> send (user picks endpoint)
-                (async ()=>{
-                  const p = await API.prepare(el, {});
-                  if(!p.ok){ alert('Tidak dapat mengekstrak isi: '+ (p.reason||'unknown')); return; }
-                  // show prompt for endpoint (simple)
-                  const ep = prompt('Masukkan endpoint AI yang dipercayai (harus di-whitelist):\\n' + (CONFIG.WHITELIST_ENDPOINTS.join('\\n')||'(kosong)'), CONFIG.WHITELIST_ENDPOINTS[0]||'');
-                  if(!ep) return alert('Dibatalkan');
-                  if(!CONFIG.WHITELIST_ENDPOINTS.includes(ep) && !confirm('Endpoint belum di-whitelist. Tetap lanjut? (Tidak dianjurkan)')) return;
-                  const res = await API.send(p, ep, {});
-                  alert('Hasil: ' + (res.ok ? 'Terkirim' : ('Gagal: ' + (res.reason || res.error))));
-                })();
-              });
-              document.body.appendChild(t);
-              setTimeout(()=> t.remove(), 4200);
-            }catch(e){}
-          });
-          LOG('mga14 hooked safe_gallery context menu (if present)');
-        }catch(e){}
-      };
-      // try immediate hook + retry
-      hookGallery();
-      setTimeout(hookGallery, 800);
+  // Daftarkan global
+  try{
+    Object.defineProperty(window,"DEV_mga14_biksu_decoder",{ value:API, writable:false, configurable:false });
+  }catch(e){
+    window.DEV_mga14_biksu_decoder = API;
+  }
 
-      // Auto-detect DOMPurify presence for sanitize (LOG only)
-      if(window.DOMPurify) LOG('DEV_mga14 detected DOMPurify available — using for sanitization.'); else LOG('DEV_mga14 DOMPurify not found, using fallback sanitizer.');
-
-    }catch(e){ WARN('autoInit failed', e); }
-  })();
-
-  LOG('DEV_mga14 Biksu Decoder initialized — ready to prepare & export safely (requires user consent for sending).');
+  LOG("MGA14 dinonaktifkan total — sekarang full legacy mode.");
 })();
 </script>
 <!-- DEV_mga14aura — The Aura Monk Guardian -->
@@ -1954,200 +781,327 @@
   'use strict';
   if(window.DEV_mga14aura_guardian) return;
 
-  const ID = 'DEV_mga14aura_guardian';
-  const LOG = (...a)=>{ try{ console.info('[14aura]', ...a); }catch(e){} };
-  const WARN = (...a)=>{ try{ console.warn('[14aura]', ...a); }catch(e){} };
+  const LOG = (...a)=>{try{console.info("[mga14aura:legacy-neutralized]",...a);}catch(e){}};
 
-  // ------------------------------
-  //  CONFIG
-  // ------------------------------
-  const CONFIG = {
-    HIERARCHY: {
-      sacredMothers: [
-        'DEV_mga13_mother_gate',
-        'DEV_mga13_theme_adapter',
-        'DEV_mga13c_cable_master',
-        'DEV_mga13d_android_zone',
-        'DEV_mga14_biksu_decoder'
-      ],
-      lesserModules: [
-        'DEV_mg',
-        'DEV_mg_debug',
-        'DEV_mga1','DEV_mga2','DEV_mga3','DEV_mga4','DEV_mga5',
-        'DEV_mga6','DEV_mga7','DEV_mga8','DEV_mga9','DEV_mga10',
-        'DEV_mga11','DEV_mga12'
-      ]
-    },
-    GLOBAL_OS_STABILITY: true,
-    FPS_THRESHOLD: 22, // below = aura active
-    CPU_PACE_LIMIT: 0.30, // ~30% load tolerance
-    REJECT_AGGRESSIVE_MODULES: true,
-    RESPECT_MOTHER_CHAIN: true
-  };
+  // ================================================
+  // MGA14-AURA   —   LEGACY MAX PASSIVE (Mode C)
+  // ================================================
+  // Semua fungsi berat DIMATIKAN total.
+  // Tidak monitor FPS.
+  // Tidak disiplin modul apa pun.
+  // Tidak mengawasi Mother Gate.
+  // Tidak menyentuh AI Lama sama sekali.
+  // Hanya menjadi placeholder agar sistem tidak error.
+  // ================================================
 
-  // ------------------------------
-  //  INTERNAL STATE
-  // ------------------------------
-  const state = {
-    fps: 60,
-    lastFrame: performance.now(),
-    auraEngaged: false,
-    cooldown: false
-  };
-
-  // ------------------------------
-  //  FPS MONITORING (light)
-  // ------------------------------
-  function fpsLoop(t){
-    try{
-      const delta = t - state.lastFrame;
-      state.lastFrame = t;
-      state.fps = Math.floor(1000/delta);
-      if(state.fps < CONFIG.FPS_THRESHOLD){
-        engageAura('fps-low');
-      }
-    }catch(e){}
-    requestAnimationFrame(fpsLoop);
-  }
-  requestAnimationFrame(fpsLoop);
-
-  // ------------------------------
-  //  AURA ENGAGEMENT
-  // ------------------------------
-  function engageAura(reason){
-    if(state.cooldown) return;
-    if(state.auraEngaged) return;
-
-    state.auraEngaged = true;
-    state.cooldown = true;
-    LOG('Aura activated due to:', reason);
-
-    // Apply soft-calm to lesser modules
-    CONFIG.HIERARCHY.lesserModules.forEach(id=>{
-      const mod = window[id];
-      if(!mod) return;
-      try{
-        if(mod.configure){
-          mod.configure({ calmMode:true, cpuLimit: CONFIG.CPU_PACE_LIMIT });
-        }
-        if(mod.stop && CONFIG.REJECT_AGGRESSIVE_MODULES){
-          // Only halt if looks too active
-          if(mod.__activity && mod.__activity > 50){
-            mod.stop();
-            WARN('14aura temporarily halted noisy module:', id);
-          }
-        }
-      }catch(e){}
-    });
-
-    // Respect mothers: ensure harmony
-    if(CONFIG.RESPECT_MOTHER_CHAIN){
-      CONFIG.HIERARCHY.sacredMothers.forEach(id=>{
-        const m = window[id];
-        if(!m) return;
-        try{
-          if(m.ensureHarmony) m.ensureHarmony();
-        }catch(e){}
-      });
-    }
-
-    // cooldown after few seconds
-    setTimeout(()=>{
-      state.auraEngaged = false;
-      setTimeout(()=> state.cooldown = false, 1000);
-    }, 1200);
-  }
-
-  // ------------------------------
-  //  GLOBAL OS STABILITY ENFORCEMENT
-  // ------------------------------
-  function applyGlobalOSProtection(){
-    try{
-      if(!CONFIG.GLOBAL_OS_STABILITY) return;
-
-      const platform = navigator.platform.toLowerCase();
-      const ua = navigator.userAgent.toLowerCase();
-
-      const osProfile = {
-        windows: /win/.test(platform),
-        android: /android/.test(ua),
-        ios: /iphone|ipad|ipod/.test(ua),
-        mac: /mac/.test(platform),
-        linux: /linux/.test(platform)
-      };
-
-      LOG('OS profile detected:', osProfile);
-
-      // Light adapt: keep cross-platform performance consistent
-      document.documentElement.style.setProperty('--quantum-transition-speed', '0.11s');
-      document.documentElement.style.setProperty('--quantum-transform-smooth', 'translateZ(0)');
-      document.documentElement.style.setProperty('--quantum-render-balance', '1');
-
-      // Remove heavy shadows for low-end platforms
-      if(osProfile.android || osProfile.ios){
-        document.documentElement.style.setProperty('--quantum-shadow-level', '0.3');
-      }
-
-    }catch(e){}
-  }
-
-  applyGlobalOSProtection();
-
-  // ------------------------------
-  //  SILENCE / OVERRIDE lesser modules IF THEY MISBEHAVE
-  // ------------------------------
-  function disciplineLesserModules(){
-    CONFIG.HIERARCHY.lesserModules.forEach(id=>{
-      const m = window[id];
-      if(!m) return;
-      try{
-        if(m.__internalForce || m.__triesOverrideTheme){
-          WARN('14aura detected disobedient module:', id);
-          if(m.stop) m.stop();
-          if(m.reset) m.reset();
-        }
-      }catch(e){}
-    });
-  }
-
-  setInterval(disciplineLesserModules, 1400);
-
-  // ------------------------------
-  //  PUBLIC API
-  // ------------------------------
   const API = {
-    __meta: { name:'DEV_mga14aura', version:'1.0.0', purpose:'Hierarchy-Aura-Stability' },
-
-    calmAll(){
-      engageAura('manual-calm');
-      return true;
+    __meta:{
+      name:"DEV_mga14aura_guardian",
+      version:"3.0-legacy",
+      mode:"LEGACY-MAX-PASSIVE",
+      author:"najibdev"
     },
 
-    blessMother(){
-      CONFIG.HIERARCHY.sacredMothers.forEach(id=>{
-        if(window[id] && window[id].bless) window[id].bless();
-      });
-    },
-
-    scanStatus(){
-      return {
-        fps: state.fps,
-        auraActive: state.auraEngaged,
-        cooldown: state.cooldown
-      };
-    },
-
-    configure(opts){
-      Object.assign(CONFIG, opts||{});
-      LOG('14aura configured:', opts);
-    }
+    // Semua fungsi utama dijinakkan:
+    calmAll(){ return true; },
+    blessMother(){ return true; },
+    scanStatus(){ return { fps:60, auraActive:false, cooldown:false }; },
+    configure(){ return true; }
   };
 
-  try{ Object.defineProperty(window,'DEV_mga14aura_guardian',{ value:API, writable:false}); }
-  catch(e){ window.DEV_mga14aura_guardian = API; }
+  // Bekukan supaya modul lain (mga13/14) tidak bisa override lagi
+  try{ Object.freeze(API); Object.seal(API); }catch(e){}
 
-  LOG('DEV_mga14aura initialized — Aura Guardian watching all modules…');
+  // Install sebagai modul resmi
+  try{
+    Object.defineProperty(window,"DEV_mga14aura_guardian",{ value:API, writable:false, configurable:false });
+  }catch(e){
+    window.DEV_mga14aura_guardian = API;
+  }
 
+  LOG("MGA14aura dimatikan total — mode LEGACY aktif.");
+})();
+</script>
+<script id="DEV_mga13e_vacuum_core">
+(function(){
+    'use strict';
+    if(window.DEV_mga13e_vacuum_core) return;
+
+    const ID = "DEV_mga13e_vacuum_core";
+    const LOG = (...a)=>{try{console.info("[mga13e:VACUUM]",...a);}catch(e){}};
+    const WARN = (...a)=>{try{console.warn("[mga13e:VACUUM]",...a);}catch(e){}};
+
+    // ============================================================
+    // 1) TARGET ENGINE — AI CHAT LAMA (INI PUSAT SEMUA FLOW)
+    // ============================================================
+    function routeToLegacyEngine(asset){
+        try{
+            // Pusat rute AI Lama
+            if(window.DEV_mga6_orchestrator && DEV_mga6_orchestrator.legacyReceive){
+                return DEV_mga6_orchestrator.legacyReceive(asset);
+            }
+            // fallback keras
+            if(asset && typeof asset === "object"){
+                asset.__legacy = true;
+            }
+        }catch(e){}
+        return asset;
+    }
+
+    // ============================================================
+    // 2) OVERWRITE & VACUUM SEMUA MODUL BARU
+    // ============================================================
+    const MODULES_TO_NEUTRALIZE = [
+        "DEV_mga13_mother_gate",
+        "DEV_mga13c_cable_master",
+        "DEV_mga13d_android_zone",
+        "DEV_mga13_theme_adapter",
+        "DEV_mga14_biksu_decoder",
+        "DEV_mga14aura_guardian",
+        "najibdevStrongLazyLoader",
+        "najibdevStrongLazyLoaderV2"
+    ];
+
+    function vacuumModule(name){
+        try{
+            if(!window[name]) return;
+
+            const shadow = window[name];
+            window[name] = new Proxy({}, {
+                get(target, key){
+                    // Semua API dimatikan, tapi
+                    // permintaan asset tetap diarahkan ke AI Lama
+                    if(key === "accept" || key === "evaluate" || key === "importTheme")
+                        return (asset)=> routeToLegacyEngine(asset);
+
+                    if(key === "stop" || key === "disable" || key === "neutralize")
+                        return ()=> true;
+
+                    // Fallback default value
+                    return shadow[key] || null;
+                },
+                set(){ return true; }
+            });
+
+            LOG("Vacuumed:", name);
+        }catch(e){WARN("vacuumFailed",name);}
+    }
+
+    MODULES_TO_NEUTRALIZE.forEach(vacuumModule);
+
+    // ============================================================
+    // 3) GLOBAL OVERRIDES — Semua Mutasi DOM diarahkan ke AI LAMA
+    // ============================================================
+    const mo = new MutationObserver((muts)=>{
+        muts.forEach(m=>{
+            m.addedNodes && m.addedNodes.forEach(n=>{
+                try{
+                    if(n instanceof Element){
+                        // Semua script/img/svg/iframe → AI Lama
+                        const t = n.tagName.toLowerCase();
+                        if(["script","img","svg","iframe","object","link","style"].includes(t)){
+                            routeToLegacyEngine(n);
+                        }
+                    }
+                }catch(e){}
+            });
+        });
+    });
+
+    setTimeout(()=>{
+        try{
+            mo.observe(document.documentElement,{childList:true,subtree:true});
+            LOG("Global Mutation Vacuum aktif");
+        }catch(e){}
+    },120);
+
+    // ============================================================
+    // 4) PRIORITY BOOST → AI Lama jadi “Master Engine”
+    // ============================================================
+    const LEGACY_MASTER = {
+        take(asset){ return routeToLegacyEngine(asset); },
+        isFinal: true,
+        priority: 999999
+    };
+
+    Object.defineProperty(window,"DEV_mga13e_vacuum_core",{
+        value:LEGACY_MASTER, writable:false, configurable:false
+    });
+
+    LOG("mga13e VACUUM CORE aktif — Semua modul baru diserap, semua diarahkan ke AI Lama.");
+})();
+</script>
+<script id="DEV_mga13e_vacuum_core_supreme">
+(function(){
+  'use strict';
+  if(window.DEV_mga13e_vacuum_core_supreme) return;
+  const ID = "DEV_mga13e_vacuum_core_supreme";
+  const LOG = (...a)=>{ try{ console.info("[mga13e:SUPREME]", ...a);}catch(e){} };
+  const WARN = (...a)=>{ try{ console.warn("[mga13e:SUPREME]", ...a);}catch(e){} };
+
+  const CONFIG = {
+    legacyOrchestratorGlobal: "DEV_mga6_orchestrator",
+    legacyReceiveFn: "legacyReceive",
+    autoRemoveNewModules: true,
+    aggressiveVacuum: true,
+    observeMutations: true,
+    sessionKeyName: "__MGA_LEGACY_KEY_v2",
+    protectGlobals: true,
+    maxProcessPerTick: 200
+  };
+
+  function hasLegacyOrch(){
+    try{ return !!(window[CONFIG.legacyOrchestratorGlobal] && typeof window[CONFIG.legacyOrchestratorGlobal][CONFIG.legacyReceiveFn] === "function"); }
+    catch(e){ return false; }
+  }
+  function routeToLegacy(asset){
+    try{
+      if(hasLegacyOrch()){
+        try{ return window[CONFIG.legacyOrchestratorGlobal][CONFIG.legacyReceiveFn](asset); }
+        catch(e){ WARN("legacy route failed"); }
+      }
+      window.__mga13e_legacy_queue = window.__mga13e_legacy_queue || [];
+      window.__mga13e_legacy_queue.push({time:Date.now(), asset:asset});
+      return asset;
+    }catch(e){ return asset; }
+  }
+
+  const TARGET_MODULE_PATTERNS = [
+    /^DEV_mga13_/i, /^DEV_mga14_/i, /^DEV_mga13c/i, /^DEV_mga13d/i, /^DEV_mga14aura/i,
+    /mga13/i, /mga14/i, /theme_adapter/i, /biksu_decoder/i, /aura_guardian/i, /cable_master/i
+  ];
+
+  function isTargetModuleName(name){
+    if(!name) return false;
+    try{ return TARGET_MODULE_PATTERNS.some(p=> (typeof name === "string") && p.test(name)); }catch(e){ return false; }
+  }
+
+  function vacuumGlobal(name){
+    try{
+      if(!name || !window[name]) return false;
+      const original = window[name];
+      const proxy = new Proxy({}, {
+        get(target, prop){
+          try{
+            if(prop === "__meta" && original && original.__meta) return original.__meta;
+            if(prop === "accept" || prop === "evaluate" || prop === "importTheme" || prop === "legacyReceive" || prop === "fetch" || prop === "process"){
+              return function(arg){ try{ return routeToLegacy(arg); }catch(e){ return null; } };
+            }
+            if(prop === "stop" || prop === "disable" || prop === "shutdown" || prop === "neutralize"){
+              return function(){ return true; };
+            }
+            return (typeof original[prop] === "function") ? function(){ return null; } : original[prop];
+          }catch(e){ return null; }
+        },
+        set(){ return true; },
+        apply(){ return null; },
+        construct(){ return {}; }
+      });
+      try{ Object.defineProperty(window, name, { value: proxy, writable:false, configurable:false }); }
+      catch(e){ window[name] = proxy; }
+      LOG("Vacuumed:", name);
+      return true;
+    }catch(e){ WARN("vacuumGlobal failed", name, e); return false; }
+  }
+
+  function aggressiveVacuumSweep(){
+    try{
+      const keys = Object.keys(window);
+      let count = 0;
+      for(const k of keys){
+        if(isTargetModuleName(k)){
+          vacuumGlobal(k);
+          count++;
+        }
+      }
+      LOG("Vacuum sweep done. Count:", count);
+      return count;
+    }catch(e){ WARN("vacuum sweep error", e); return 0; }
+  }
+
+  let mutationObserver = null;
+  function handleAddedNode(node){
+    try{
+      if(!(node instanceof Element)) return;
+      const tag = node.tagName && node.tagName.toLowerCase();
+      if(tag === "script" || tag === "iframe" || tag === "object" || tag === "link" || tag === "style"){
+        const id = node.id || node.getAttribute && node.getAttribute("id") || "";
+        const src = node.src || node.getAttribute && node.getAttribute("src") || "";
+        const text = (node.textContent || "").slice(0,200);
+        if(isTargetModuleName(id) || /mga13|mga14|mga13c|mga13d|mga14aura|theme_adapter|biksu_decoder/i.test(src + " " + text + " " + id)){
+          try{ routeToLegacy({ id:id||src||"inline", nodeSnippet: text }); }catch(e){}
+          try{ node.remove(); LOG("Removed reinjected module node:", id || src); }catch(e){}
+          return;
+        }
+        if(tag === "img" || tag === "svg" || tag === "iframe"){
+          try{ routeToLegacy(node); }catch(e){}
+        }
+      }
+    }catch(e){ WARN("handleAddedNode err", e); }
+  }
+
+  function startMutationVacuum(){
+    try{
+      if(!CONFIG.observeMutations) return;
+      if(mutationObserver) return;
+      mutationObserver = new MutationObserver((muts)=>{
+        try{
+          let processed = 0;
+          for(const m of muts){
+            for(const n of (m.addedNodes || [])){
+              try{
+                handleAddedNode(n);
+                processed++;
+                if(processed > CONFIG.maxProcessPerTick) break;
+              }catch(e){}
+            }
+            if(processed > CONFIG.maxProcessPerTick) break;
+          }
+        }catch(e){ WARN("mutation iterate fail", e); }
+      });
+      mutationObserver.observe(document.documentElement || document.body, { childList:true, subtree:true });
+      LOG("Mutation vacuum observer started.");
+    }catch(e){ WARN("startMutationVacuum failed", e); }
+  }
+
+  function protectLegacyGlobals(){
+    try{
+      if(!CONFIG.protectGlobals) return;
+      const legacyNames = ["DEV_mga1_child_suite","DEV_mga2_child_suite","DEV_mga3_child_suite","DEV_mga4_najibchilddev","DEV_mga5_child_suite","DEV_mga6_orchestrator","DEV_mg_najibdev","DEV_mg_MemoryCore"];
+      for(const n of legacyNames){
+        try{
+          const val = window[n];
+          if(typeof val === "object" || typeof val === "function"){
+            Object.defineProperty(window, n, { value: val, writable:false, configurable:false });
+            LOG("Protected legacy global:", n);
+          }
+        }catch(e){}
+      }
+    }catch(e){ WARN("protectLegacyGlobals failed", e); }
+  }
+
+  setTimeout(()=>{
+    try{
+      LOG("mga13e SUPREME booting...");
+      if(CONFIG.aggressiveVacuum) aggressiveVacuumSweep();
+      protectLegacyGlobals();
+      startMutationVacuum();
+      setInterval(()=> { try{ if(CONFIG.aggressiveVacuum) aggressiveVacuumSweep(); }catch(e){} }, 5_000);
+      try{ Object.defineProperty(window, "DEV_mga13e_vacuum_core_supreme", { value:true, writable:false, configurable:false }); }catch(e){ window.DEV_mga13e_vacuum_core_supreme = true; }
+      LOG("mga13e SUPREME active — legacy-first enforcement engaged.");
+    }catch(e){ WARN("mga13e boot fail", e); }
+  }, 150);
+
+  try{
+    const admin = {
+      __meta:{ name: ID, mode: "SUPREME" },
+      vacuumNow: aggressiveVacuumSweep,
+      stopObserver: function(){ try{ if(mutationObserver) { mutationObserver.disconnect(); mutationObserver = null; LOG("mutation observer stopped"); } }catch(e){} },
+      startObserver: startMutationVacuum,
+      routeToLegacy: routeToLegacy
+    };
+    try{ Object.defineProperty(window, "DEV_mga13e_SUPREME_API", { value: admin, writable:false, configurable:false }); }catch(e){ window.DEV_mga13e_SUPREME_API = admin; }
+  }catch(e){}
 })();
 </script>
 <script src="najibdev-ai-engine-v2.js"></script>
@@ -3050,7 +2004,6 @@ function insertCardAfterMarker(card, sidebar){
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Poppins:wght@300;400;500;600;700;800;900&family=Orbitron:wght@400;500;600;700;800;900&family=Nunito+Sans:wght@300;400;600;700;800;900&family=Playfair+Display:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Raleway:wght@300;400;500;600;700;800;900&family=Urbanist:wght@300;400;500;600;700;800;900&family=Montserrat:wght@300;400;500;600;700;800;900&family=Open+Sans:wght@300;400;500;600;700;800&family=Source+Sans+Pro:wght@300;400;600;700;900&family=Roboto:wght@300;400;500;700;900&family=Lato:wght@300;400;700;900&family=Merriweather:wght@300;400;700;900&family=Noto+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700&family=Fira+Code:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700;800&family=Chakra+Petch:wght@300;400;500;600;700&family=Exo+2:wght@300;400;500;600;700;800;900&family=Audiowide&display=swap" rel="stylesheet">
 
-    <!-- REMOVED DEV_lgts_core BY OWNER REQUEST -->
     <!-- DEV_mga1-Ultimate CHILD SUITE - paste above your style root / stl-ultra-style -->
 <script id="DEV_mga1_child_suite">
 (function(){
