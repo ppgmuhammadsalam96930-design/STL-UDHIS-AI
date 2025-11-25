@@ -182,6 +182,20 @@ rate_limiter = RateLimiter(RATE_LIMIT_PER_MIN)
 app = FastAPI(title='STL Quantum Backend Final Ultra v7 (Turbo)')
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS or ['*'], allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 
+
+
+# --- AUTO-SYNC HTML module integration (added by assistant) ---
+try:
+    from backend_auto_sync_module import include_router as include_auto_sync
+    include_auto_sync(app)
+    # optional: expose snippet endpoint
+    from fastapi import Response
+    @app.get('/sync/injection_snippet')
+    async def sync_injection_snippet():
+        return Response(content=get_injection_snippet(), media_type='text/html')
+except Exception as _e:
+    import logging
+    logging.getLogger('backend_auto_sync').exception('auto-sync integration failed')
 class ProxyRequest(BaseModel):
     apiKey: Optional[str] = None
     body: Dict[str,Any] = {}
