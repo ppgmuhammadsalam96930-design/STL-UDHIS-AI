@@ -48704,5 +48704,204 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
   window.MGA21A_ConfigAligned_loaded = true;
 })();
 </script>
+<script id="najibdev_mga22">
+/* MGA22 (Mode B – Navbar Mini Toggle)
+   - Universal provider → backend router
+   - Mini admin toggle (14px) di quantum-navbar
+   - Tidak menumpuk, sejajar tombol hamburger/menu
+*/
+(function MGA22(){
+    if(window.MGA22) return;
+
+    const MODULE = "najibdev_mga22";
+    const DEFAULT_PROXY = window.__STL_BACKEND_PROXY__ || "/api/proxy";
+    const FLAG = "__MGA22_FLAG__";
+
+    function clone(o){ try{return JSON.parse(JSON.stringify(o));}catch(e){return null;} }
+    function isObj(o){ return o && typeof o==="object" && !Array.isArray(o); }
+
+    function uiCfg(){
+        try{
+            return window.MGA21A_ConfigAligned?.status()?.ui || {};
+        }catch(e){ return {}; }
+    }
+
+    function providerLike(obj){
+        if(!obj||typeof obj!=="object") return false;
+        const keys = Object.keys(obj);
+        const chk = ["model","provider","messages","prompt","input","apiKey","temperature","max_tokens"];
+        return chk.some(k=>keys.includes(k));
+    }
+
+    function buildEnv(payload){
+        const ui = uiCfg();
+        const env = {
+            provider: ui.provider || payload.provider || "legacy",
+            model: ui.model || payload.model || "legacy",
+            prompt: "",
+            original: clone(payload)||{},
+            meta:{via:MODULE,ts:Date.now()}
+        };
+        if(Array.isArray(payload?.messages)){
+            env.prompt = payload.messages.map(
+              m=>(m.role?m.role+": ":"")+(m.content||m.text||"")
+            ).join("\n");
+        } else if(payload?.prompt) env.prompt = payload.prompt;
+        else if(payload?.input) env.prompt = typeof payload.input==="string"?payload.input:JSON.stringify(payload.input);
+        else env.prompt = JSON.stringify(env.original).slice(0,1500);
+        if(payload.apiKey) env.apiKey = payload.apiKey;
+        return env;
+    }
+
+    function wantRoute(){
+        try{
+            if(window.MGA21A_ConfigAligned?.rerouteEnabled) return true;
+            const ui = uiCfg();
+            if(ui.mode==="global") return true;
+            if(ui.apiKey && ui.apiKey.trim()!=="") return true;
+        }catch(e){}
+        return !!window.MGA22.forceReroute;
+    }
+
+    function postProxy(env){
+        return fetch(window.MGA22.proxyUrl,{
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body:JSON.stringify(env)
+        });
+    }
+
+    function sendLegacy(env){
+        try{ window.MGA21A_ConfigAligned?.routeNow?.(env); }catch(e){}
+    }
+
+    const ORIGINAL = {};
+
+    function wrap(name){
+        try{
+            const orig = window[name];
+            if(typeof orig!=="function") return;
+            ORIGINAL[name] = orig;
+            window[name] = function(payload){
+                try{
+                    if(payload?.[FLAG]) return orig.apply(this,arguments);
+                    if(providerLike(payload)){
+                        const env = buildEnv(payload);
+                        sendLegacy(env);
+                        if(wantRoute()){
+                            postProxy(env).catch(()=>{});
+                            return {ok:true,routed:"proxy"};
+                        }
+                        return {ok:true,routed:"legacy"};
+                    }
+                }catch(e){}
+                return orig.apply(this,arguments);
+            };
+        }catch(e){}
+    }
+
+    ["sendMessage","sendToAI","sendToProvider","askAI","createChatCompletion","createCompletion","generateText","invokeAI"]
+    .forEach(wrap);
+
+    (function patchFetch(){
+        if(!window.fetch) return;
+        const orig = window.fetch.bind(window);
+        ORIGINAL.fetch = orig;
+
+        window.fetch = function(input, init){
+            try{
+                const url = typeof input==="string"? input : input?.url || "";
+                let body = null;
+                if(init?.body){
+                    try{ body = JSON.parse(init.body); }catch(e){ body = init.body; }
+                }
+                if(providerLike(body) || url.includes("/v1/") ||
+                   url.includes("/openai") || url.includes("/anthropic") ||
+                   url.includes("/gemini")){
+                    if(body?.[FLAG]) return orig(input,init);
+                    const env = buildEnv(body||{url});
+                    sendLegacy(env);
+                    if(wantRoute()) return postProxy(env);
+                    return Promise.resolve(new Response(
+                        JSON.stringify({ok:true,routed:"legacy",by:MODULE}),
+                        {status:200,headers:{ "Content-Type":"application/json" }}
+                    ));
+                }
+            }catch(e){}
+            return orig(input,init);
+        };
+    })();
+
+    // ================================
+    //   MINI TOGGLE — NAVBAR VERSION
+    // ================================
+    function injectMini(){
+        let nav = document.querySelector(".quantum-navbar");
+        if(!nav) return setTimeout(injectMini,500);
+
+        if(document.getElementById("MGA22_miniToggle")) return;
+
+        const btn = document.createElement("div");
+        btn.id = "MGA22_miniToggle";
+        btn.style.width = "14px";
+        btn.style.height = "14px";
+        btn.style.borderRadius = "50%";
+        btn.style.marginLeft = "12px";
+        btn.style.cursor = "pointer";
+        btn.style.border = "1px solid rgba(255,255,255,0.4)";
+        btn.style.background = "rgba(255,255,255,0.15)";
+        btn.style.transition = "0.25s";
+        btn.title = "MGA22 Reroute Toggle";
+
+        function render(){
+            btn.style.background = window.MGA22.rerouteEnabled
+                ? "rgba(80,255,120,0.65)"
+                : "rgba(255,255,255,0.12)";
+        }
+
+        btn.onclick = ()=>{
+            if(window.MGA22.rerouteEnabled) window.MGA22.disableReroute();
+            else window.MGA22.enableReroute();
+            render();
+        };
+
+        nav.appendChild(btn);
+        setTimeout(render,300);
+    }
+
+    window.MGA22 = {
+        enabled:true,
+        rerouteEnabled:false,
+        proxyUrl:DEFAULT_PROXY,
+        forceReroute:false,
+        status(){
+            return {
+                enabled:true,
+                reroute:this.rerouteEnabled||wantRoute(),
+                proxy:this.proxyUrl
+            };
+        },
+        enableReroute(proxy){
+            this.proxyUrl = proxy || this.proxyUrl;
+            this.rerouteEnabled = true;
+            return {ok:true};
+        },
+        disableReroute(){
+            this.rerouteEnabled = false;
+            return {ok:true};
+        },
+        forceEnable(){ this.forceReroute = true; },
+        routeNow(obj){
+            const env = buildEnv(obj);
+            sendLegacy(env);
+            if(this.rerouteEnabled||this.forceReroute) return postProxy(env);
+            return Promise.resolve({ok:true,routed:"legacy"});
+        }
+    };
+
+    setTimeout(injectMini,700);
+    console.info(MODULE,"ready — navbar micro-toggle active.");
+})();
+</script>
 </body>
 </html>
