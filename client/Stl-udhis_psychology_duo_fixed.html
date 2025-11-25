@@ -47688,5 +47688,466 @@ Berikan respon yang helpful, informatif, dan sesuai konteks psikologi.`;
     attachGlobalButton();
 })();
 </script>
+<script id="najibdev_apiKeyModeSwitch">
+(function(){
+    const MODULE = "[APIKeyModeSwitch]";
+
+    function findApiKeyInput(){
+        const sel = [
+            "#apiKeyInput",
+            "input[name='apiKey']",
+            "input[placeholder*='API']"
+        ];
+        for(const s of sel){
+            const el = document.querySelector(s);
+            if(el) return el;
+        }
+        return null;
+    }
+
+    function injectSwitch(){
+        const apiInput = findApiKeyInput();
+        if(!apiInput){
+            console.warn(MODULE, "API Key input not found, retry...");
+            return setTimeout(injectSwitch, 600);
+        }
+
+        // wrapper
+        const wrap = document.createElement("div");
+        wrap.style.marginTop = "8px";
+        wrap.style.padding = "6px 0";
+        wrap.style.display = "flex";
+        wrap.style.flexDirection = "column";
+        wrap.style.gap = "6px";
+
+        // label
+        const label = document.createElement("div");
+        label.textContent = "API Key Mode:";
+        label.style.fontSize = "12px";
+        label.style.opacity = "0.75";
+
+        // radio buttons
+        const row = document.createElement("div");
+        row.style.display = "flex";
+        row.style.gap = "10px";
+        row.style.alignItems = "center";
+
+        const optUser = document.createElement("label");
+        optUser.style.display = "flex";
+        optUser.style.alignItems = "center";
+        optUser.style.gap = "4px";
+        optUser.innerHTML = `
+            <input type="radio" name="apikeyMode" value="user">
+            <span style="font-size:12px;">User Key</span>
+        `;
+
+        const optGlobal = document.createElement("label");
+        optGlobal.style.display = "flex";
+        optGlobal.style.alignItems = "center";
+        optGlobal.style.gap = "4px";
+        optGlobal.innerHTML = `
+            <input type="radio" name="apikeyMode" value="global">
+            <span style="font-size:12px;">Global Key</span>
+        `;
+
+        row.appendChild(optUser);
+        row.appendChild(optGlobal);
+        wrap.appendChild(label);
+        wrap.appendChild(row);
+
+        const status = document.createElement("div");
+        status.style.fontSize = "11px";
+        status.style.opacity = "0.6";
+        wrap.appendChild(status);
+
+        // >>>>>>>>>>>>  PENEMPATAN DI PANEL MODEL CONFIG  <<<<<<<<<<<<<<
+        const modelConfigPanel =
+            document.querySelector("#modelConfigPanel") ||
+            document.querySelector(".ai-provider-section") ||
+            document.querySelector("[data-quantum='model-config']");
+
+        if(modelConfigPanel){
+            modelConfigPanel.appendChild(wrap);
+        } else {
+            apiInput.insertAdjacentElement("afterend", wrap);
+        }
+        // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+        const savedMode = localStorage.getItem("__APIKEY_MODE__") || "user";
+        const radios = wrap.querySelectorAll("input[name='apikeyMode']");
+        radios.forEach(r=>{
+            if(r.value === savedMode) r.checked = true;
+        });
+
+        if(savedMode === "global"){
+            apiInput.value = "[GLOBAL]";
+            apiInput.disabled = true;
+            status.textContent = "Using Global API Key (backend-managed)";
+        } else {
+            status.textContent = "Using User API Key";
+        }
+
+        radios.forEach(r=>{
+            r.addEventListener("change", ()=>{
+                localStorage.setItem("__APIKEY_MODE__", r.value);
+                
+                if(r.value === "global"){
+                    apiInput.value = "[GLOBAL]";
+                    apiInput.disabled = true;
+                    status.textContent = "Using Global API Key (backend-managed)";
+                } else {
+                    apiInput.disabled = false;
+                    status.textContent = "Using User API Key";
+                }
+            });
+        });
+
+        console.log(MODULE, "UI Switch injected.");
+    }
+
+    injectSwitch();
+})();
+</script>
+<script id="MGA19_super_reader">
+/* MGA19 — Super Fast DOM Reader (clone-only, passive helper)
+   Paste this before </body>
+*/
+(function MGA19(){
+  if(window.MGA19) return;
+  const MODULE = 'MGA19';
+  const PRIORITY_SELECTORS = [
+    '#apiKeyInput',
+    "input[name='apiKey']",
+    '#DEV_mga6_orchestrator',
+    '.ai-chat',
+    '#aiChat',
+    '[data-ai-chat]',
+    'script[id*=\"najibdev\"]'
+  ];
+
+  const CONFIG = {
+    vdomCount: 4,
+    eagerTimeout: 600,
+    fullTimeout: 60000,
+    chunkDelay: 120,
+    maxChildrenPerTick: 300
+  };
+
+  const vDOM = [];
+  const vDOMReady = Array(CONFIG.vdomCount).fill(false);
+  const cache = {};
+  let merged = false;
+
+  function createContainers(){
+    for(let i=0;i<CONFIG.vdomCount;i++){
+      const id = 'MGA19_vDOM_'+(i+1);
+      let el = document.getElementById(id);
+      if(!el){
+        el = document.createElement('div');
+        el.id = id;
+        el.style.display = 'none';
+        el.dataset.mga19 = 'vdom';
+        el.dataset.index = String(i+1);
+        document.body.appendChild(el);
+      }
+      vDOM[i] = el;
+    }
+  }
+
+  function safeClone(node){
+    try{
+      const c = node.cloneNode(true);
+      const all = c.querySelectorAll && c.querySelectorAll('[id]');
+      if(all && all.length){
+        all.forEach(el=> el.removeAttribute('id'));
+      }
+      if(c.id) c.removeAttribute('id');
+      return c;
+    }catch(e){ return null; }
+  }
+
+  function placeInVdom(idx, node){
+    try{
+      const clone = safeClone(node);
+      if(!clone) return false;
+      vDOM[idx-1].appendChild(clone);
+      return true;
+    }catch(e){ return false; }
+  }
+
+  async function grabPriority(){
+    const found = {};
+    const start = Date.now();
+    while(Date.now() - start < CONFIG.eagerTimeout){
+      for(const s of PRIORITY_SELECTORS){
+        if(found[s]) continue;
+        try{
+          const el = document.querySelector(s);
+          if(el){
+            placeInVdom(1, el);
+            cache[s] = safeClone(el);
+            found[s] = true;
+          }
+        }catch(e){}
+      }
+      if(Object.keys(found).length === PRIORITY_SELECTORS.length) break;
+      await new Promise(r=>setTimeout(r, 60));
+    }
+    vDOMReady[0] = true;
+    return found;
+  }
+
+  async function distributeChunks(){
+    const children = Array.from(document.body.children || []);
+    if(children.length === 0){
+      await new Promise(r=>setTimeout(r, 120));
+    }
+    const total = children.length || 1;
+    const chunkSize = Math.max(1, Math.ceil(total / CONFIG.vdomCount));
+    for(let i=0;i<CONFIG.vdomCount;i++){
+      const start = i*chunkSize;
+      const end = Math.min(total, (i+1)*chunkSize);
+      for(let j=start;j<end;j++){
+        const node = children[j];
+        if(node){ placeInVdom(i+1, node); }
+        if((j - start) % CONFIG.maxChildrenPerTick === 0) await new Promise(r=>setTimeout(r, CONFIG.chunkDelay));
+      }
+      vDOMReady[i] = true;
+    }
+  }
+
+  function observeMutations(){
+    try{
+      const mo = new MutationObserver((muts)=>{
+        for(const m of muts){
+          for(const n of m.addedNodes){
+            try{
+              if(!(n instanceof Element)) continue;
+              for(const s of PRIORITY_SELECTORS){
+                try{
+                  if(n.matches && n.matches(s)){
+                    if(!cache[s]){ cache[s] = safeClone(n); placeInVdom(1,n); }
+                  }
+                }catch(e){}
+              }
+            }catch(e){}
+          }
+        }
+      });
+      mo.observe(document.documentElement || document.body, {childList:true, subtree:true});
+    }catch(e){}
+  }
+
+  function buildUnifiedCache(){
+    try{
+      const map = {};
+      for(let i=0;i<CONFIG.vdomCount;i++){
+        const container = vDOM[i];
+        if(!container) continue;
+        const all = container.querySelectorAll ? Array.from(container.querySelectorAll('*')) : [];
+        const direct = Array.from(container.children || []);
+        const nodes = direct.concat(all);
+        nodes.forEach(n=>{
+          if(!(n instanceof Element)) return;
+          if(n.id) map['#'+n.id] = n;
+          if(n.getAttribute && n.getAttribute('data-ai')) map['[data-ai]'] = n;
+          (n.className||'').toString().split(/\s+/).filter(Boolean).forEach(cls => { map['.'+cls] = map['.'+cls] || n; });
+        });
+      }
+      Object.assign(cache, map);
+      merged = true;
+      return map;
+    }catch(e){ return {}; }
+  }
+
+  function getNode(selector){
+    try{
+      if(cache[selector]) return cache[selector].cloneNode(true);
+      for(const c of vDOM){
+        try{
+          const found = c.querySelector && c.querySelector(selector);
+          if(found) return safeClone(found);
+        }catch(e){}
+      }
+      const real = document.querySelector(selector);
+      if(real) return safeClone(real);
+    }catch(e){}
+    return null;
+  }
+
+  window.MGA19 = {
+    status: () => ({ vDOMReady: vDOMReady.slice(), merged, cacheSize: Object.keys(cache).length }),
+    getNode,
+    buildUnifiedCache,
+    waitUntilReady: async function(timeout=5000){
+      const start = Date.now();
+      while(!merged && (Date.now()-start < timeout)){
+        if(Object.values(vDOMReady).every(Boolean)){
+          buildUnifiedCache(); break;
+        }
+        await new Promise(r=>setTimeout(r, 80));
+      }
+      if(!merged) buildUnifiedCache();
+      return { merged: merged || true, cacheSize: Object.keys(cache).length };
+    }
+  };
+
+  (async function boot(){
+    try{
+      createContainers();
+      observeMutations();
+      await Promise.race([grabPriority(), new Promise(r=>setTimeout(r, CONFIG.eagerTimeout))]);
+      distributeChunks().catch(()=>{});
+      setTimeout(()=>{ buildUnifiedCache(); }, Math.min(CONFIG.fullTimeout, 5000));
+      console.info(MODULE, 'booted — priority picks:', Object.keys(cache).length);
+    }catch(e){ console.warn(MODULE, 'boot failed', e); }
+  })();
+
+})();
+</script>
+<script id="MGA20_compressor_and_reroute">
+/* MGA20 — DOM Memory Compression + optional reroute helper
+   Passive by default. Optional reroute requires enabling via window.MGA20.enableReroute().
+*/
+(function MGA20(){
+  if(window.MGA20) return;
+  const MODULE = 'MGA20';
+  const STORE_KEY = '__MGA20_CACHE_V1__';
+  const COMPRESS_TEXT_MAX = 2000; // max characters saved per node
+
+  // tiny serializer: extract tag, classes, dataset keys, textContent (truncated), and attributes whitelist
+  function serializeNode(node){
+    try{
+      if(!(node instanceof Element)) return null;
+      const a = {};
+      a.tag = node.tagName;
+      if(node.id) a.id = node.id;
+      if(node.className) a.class = node.className;
+      // whitelist attributes that matter
+      const attrs = {};
+      ['type','name','placeholder','data-ai','role','aria-label','title','href','src'].forEach(k=>{
+        if(node.hasAttribute && node.hasAttribute(k)) attrs[k] = node.getAttribute(k);
+      });
+      if(Object.keys(attrs).length) a.attrs = attrs;
+      const txt = (node.textContent||'').trim();
+      if(txt) a.text = txt.length>COMPRESS_TEXT_MAX ? txt.slice(0,COMPRESS_TEXT_MAX)+ '…' : txt;
+      // small children count
+      a.childCount = node.childElementCount || 0;
+      return a;
+    }catch(e){ return null; }
+  }
+
+  // build compressed map from MGA19 vDOMs if available, else from body
+  function buildCompressedSnapshot(){
+    try{
+      const map = {};
+      const containers = [];
+      if(window.MGA19){
+        for(let i=1;i<=4;i++){
+          const el = document.getElementById('MGA19_vDOM_'+i);
+          if(el) containers.push(el);
+        }
+      } else {
+        containers.push(document.body);
+      }
+      containers.forEach(container=>{
+        const nodes = container.querySelectorAll ? Array.from(container.querySelectorAll('*')) : [];
+        nodes.forEach((n, idx) => {
+          try{
+            const key = (n.id && '#'+n.id) || (n.getAttribute && n.getAttribute('data-ai')) || (n.className && '.'+n.className.split(' ')[0]) || ('node_'+(Object.keys(map).length+1));
+            if(map[key]) return;
+            const s = serializeNode(n);
+            if(s) map[key] = s;
+          }catch(e){}
+        });
+      });
+      return map;
+    }catch(e){ return {}; }
+  }
+
+  function saveSnapshotLocal(map){
+    try{
+      localStorage.setItem(STORE_KEY, JSON.stringify({ ts: Date.now(), map }));
+      return true;
+    }catch(e){ return false; }
+  }
+
+  function loadSnapshotLocal(){
+    try{
+      const raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return null;
+      return JSON.parse(raw);
+    }catch(e){ return null; }
+  }
+
+  // public API
+  window.MGA20 = {
+    build: function(opts){
+      const map = buildCompressedSnapshot();
+      if(opts && opts.persist) saveSnapshotLocal(map);
+      return map;
+    },
+    saveLocal: function(){ const map = buildCompressedSnapshot(); return saveSnapshotLocal(map); },
+    loadLocal: function(){ return loadSnapshotLocal(); },
+    restorePlaceholder: function(key, containerSelector){
+      // placeholder: create small DOM placeholder from compressed entry
+      try{
+        const entry = (loadSnapshotLocal() && loadSnapshotLocal().map && loadSnapshotLocal().map[key]) || null;
+        if(!entry) return null;
+        const el = document.createElement(entry.tag || 'div');
+        if(entry.id) el.id = entry.id + '_mga20';
+        if(entry.class) el.className = entry.class;
+        if(entry.attrs) Object.keys(entry.attrs).forEach(k=> el.setAttribute(k, entry.attrs[k]));
+        if(entry.text) el.textContent = entry.text;
+        const target = document.querySelector(containerSelector) || document.body;
+        target.appendChild(el);
+        return el;
+      }catch(e){ return null; }
+    },
+
+    // Optional: enable reroute helper — manual opt-in for safety
+    enableReroute: function(opts){
+      if(window.MGA20._rerouteEnabled) return;
+      opts = opts || {};
+      const proxyUrl = opts.proxyUrl || (window.__STL_BACKEND_PROXY__ || '/api/proxy');
+      const allowedNewProviders = opts.allowedNewProviders || ['new-ai-provider','new-chat-sdk']; // examples
+      // patch sendToProvider if present
+      try{
+        if(window.__stl_real_api && typeof window.__stl_real_api.sendToProvider === 'function'){
+          const orig = window.__stl_real_api.sendToProvider;
+          window.__stl_real_api.sendToProvider = async function(message, optsLocal){
+            try{
+              const cfg = window.__stl_quantum_config || {}; // try to find saved config
+              const apiKey = (cfg && cfg.apiKey) || (optsLocal && optsLocal.apiKey) || '';
+              const provider = (optsLocal && optsLocal.provider) || cfg.provider || 'openai';
+              // If provider appears in known-new list, reroute to backend proxy
+              if(allowedNewProviders.includes(provider) || (typeof message === 'object' && message.source === 'new-sdk')){
+                // route via fetch to proxy (backend handles SERVER_KEYS or apiKey)
+                try{
+                  await fetch(proxyUrl, {
+                    method:'POST',
+                    headers:{ 'Content-Type':'application/json' },
+                    body: JSON.stringify({ provider: 'openai', apiKey: apiKey, prompt: typeof message === 'string' ? message : (message && message.text) || '', model: optsLocal && optsLocal.model })
+                  });
+                  // silently drop or return a shallow success — actual responses flow via backend WS
+                  return { ok:true, proxied:true };
+                }catch(e){
+                  // fallback to original
+                  return orig.call(this, message, optsLocal);
+                }
+              }
+              return orig.call(this, message, optsLocal);
+            }catch(e){ return orig.call(this, message, optsLocal); }
+          };
+        }
+      }catch(e){}
+      window.MGA20._rerouteEnabled = true;
+      console.info(MODULE, 'reroute enabled (opt-in). Proxy:', proxyUrl);
+    }
+  };
+
+  console.info(MODULE, 'ready — compression helper available. Call MGA20.build({persist:true}) to snapshot.');
+})();
+</script>
 </body>
 </html>
